@@ -36,23 +36,10 @@ def load_corpus(run: Path) -> list[dict]:
     return rows
 
 
-def audit_draft(source_facts: str, draft: str) -> dict:
-    """Small lexical alarm, never a semantic or publication approval."""
-    if not source_facts.strip() or not draft.strip() or max(len(source_facts), len(draft)) > 30_000:
-        raise CorpusError("Provide nonempty texts of at most 30,000 characters each")
-    import re
-    pattern = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*(?:%|mg|kg|µg|μg|mL|mm|cm|nM|p\s*[<=>]\s*\d+(?:\.\d+)?)?", re.I)
-    numbers = lambda text: {re.sub(r"\s+", "", n).lower() for n in pattern.findall(text)}
-    original, proposed = numbers(source_facts), numbers(draft)
-    return {"status": "needs_human_review", "new_numeric_tokens": sorted(proposed - original),
-            "omitted_numeric_tokens": sorted(original - proposed),
-            "limitations": "Lexical alarms can miss changed direction, negation, causality, populations, units, citations and claims. A human must verify every statement against the fact sheet and sources."}
-
-
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.5.0", instructions="For writing, call rewrite_plan and then assess_revision on the exact proposed draft with the same protected spans. Never infer that a diagnostic score proves author likeness or factual accuracy.")
+    server = MCPServer("PenTwin", version="0.6.0", instructions="For authorial style, call rewrite_plan and then assess_revision on the exact proposed draft. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -77,21 +64,14 @@ def build_server(run: Path) -> MCPServer:
         return profile
 
     @server.tool()
-    def rewrite_plan(draft: str, section: str, move: str = "", protected_spans: list[str] | None = None) -> dict:
+    def rewrite_plan(draft: str, section: str, move: str = "") -> dict:
         """Compare an English draft with local, family-balanced author style and tell the host LLM how to rewrite it without source excerpts."""
-        return guidance(load_corpus(run), draft, section, move, protected_spans)
+        return guidance(load_corpus(run), draft, section, move)
 
     @server.tool()
-    def assess_revision(original: str, revised: str, section: str, move: str = "",
-                        protected_spans: list[str] | None = None) -> dict:
-        """Measure style movement and flag lexical meaning changes; return text hashes, never an automatic factual approval."""
-        return assess(load_corpus(run), original, revised, section, move, protected_spans)
-
-    @server.tool()
-    def review_draft(source_facts: str, draft: str) -> dict:
-        """Flag numeric changes in a draft against a supplied fact sheet; always requires human meaning and citation review."""
-        load_corpus(run)
-        return audit_draft(source_facts, draft)
+    def assess_revision(original: str, revised: str, section: str, move: str = "") -> dict:
+        """Measure aggregate style movement and return text hashes; never certify author likeness."""
+        return assess(load_corpus(run), original, revised, section, move)
 
     return server
 
