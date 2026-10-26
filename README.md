@@ -41,6 +41,8 @@ The process reads JSON-RPC from stdin and writes MCP responses to stdout. Config
 
 `corpus_status` reports anonymous counts. Unpublished papers can be ingested and locally measured, but their text is never returned by this server. `review_draft` flags changed numeric tokens between a supplied fact sheet and draft; it cannot detect all altered claims. See [style logic and validation](docs/STYLE_ENGINE.md).
 
+**Current evidence:** an independent-author pilot matched 4 of 6 withheld essays, the same count as a sentence/paragraph-length comparator. It does not support a claim of author-specific resemblance. Details and limitations are in the style logic document.
+
 The MCP path was exercised with the official Python SDK client over a real stdio subprocess using synthetic documents. **A Windows installation of ChatGPT or Claude has not been exercised here.** Claude Code can register a local stdio command (`claude mcp add --transport stdio pentwin -- python -m pentwin.cli serve C:\private\pentwin\run-001`) and verify it with `/mcp`. Claude Desktop supports local MCP extensions, but packaging and an actual desktop check remain. ChatGPT Desktop's local plugin submission is restricted to approved partners. An alternative private ChatGPT test can use OpenAI's Secure MCP Tunnel, which requires its own Platform key, tunnel and workspace permissions, and outbound communication. GitHub access does not grant those permissions. See [connection checklist](docs/CONNECTION.md) and the linked official sources there.
 
 Do not assume a local corpus means a local-only model: tool responses and fact sheets supplied in the conversation can reach the model provider. Obtain permission for every model-facing passage, and do not publish private run paths or files.
