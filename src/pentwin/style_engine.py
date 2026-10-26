@@ -11,7 +11,7 @@ import re
 from collections import Counter, defaultdict
 from statistics import median
 
-from pentwin.cli import CorpusError
+from pentwin.cli import CorpusError, MOVES
 
 
 WORD = re.compile(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b")
@@ -67,13 +67,15 @@ def _measurement(texts: list[str]) -> dict[str, float]:
             "_sentences": float(total), "_tokens": float(tokens)}
 
 
-def development_rows(rows: list[dict], section: str = "") -> list[dict]:
+def development_rows(rows: list[dict], section: str = "", move: str = "") -> list[dict]:
     if section and section not in SECTIONS:
         raise CorpusError("Unknown section")
+    if move and move not in MOVES:
+        raise CorpusError("Unknown rhetorical move")
     # The seal already enforces visual review and confirmed primary authorship.
     # Permission controls raw model-facing excerpts, not private local statistics.
     return [row for row in rows if row["split"] == "development" and
-            (not section or row["section"] == section)]
+            (not section or row["section"] == section) and (not move or row.get("move") == move)]
 
 
 def fingerprint(rows: list[dict]) -> str:
@@ -81,8 +83,8 @@ def fingerprint(rows: list[dict]) -> str:
     return hashlib.sha256("\n".join(identifiers).encode()).hexdigest()
 
 
-def aggregate(rows: list[dict], section: str = "") -> dict:
-    chosen = development_rows(rows, section)
+def aggregate(rows: list[dict], section: str = "", move: str = "") -> dict:
+    chosen = development_rows(rows, section, move)
     groups: dict[str, list[str]] = defaultdict(list)
     for row in chosen:
         if "\x00" not in row["text"] and "\ufffd" not in row["text"]:
@@ -90,7 +92,7 @@ def aggregate(rows: list[dict], section: str = "") -> dict:
     measured = {family: _measurement(texts) for family, texts in groups.items()}
     measured = {family: data for family, data in measured.items() if data.get("_sentences", 0) >= 2}
     if len(measured) < 2:
-        return {"status": "insufficient_evidence", "section": section or "all",
+        return {"status": "insufficient_evidence", "section": section or "all", "move": move or "all",
                 "reason": "At least two reviewed development paper families with two sentences each are needed."}
     keys = [key for key in next(iter(measured.values())) if not key.startswith("_")]
     # One paper has one vote, regardless of its length or number of paragraphs.
@@ -101,7 +103,7 @@ def aggregate(rows: list[dict], section: str = "") -> dict:
                         if key.startswith("connector:") and value > 0), key=lambda item: (-item[1], item[0]))[:3]
     stance = sorted(((key.split(":", 1)[1], value) for key, value in target.items()
                      if key.startswith("stance:") and value > 0), key=lambda item: (-item[1], item[0]))[:3]
-    return {"status": "provisional", "section": section or "all", "families": len(measured),
+    return {"status": "provisional", "section": section or "all", "move": move or "all", "families": len(measured),
             "passages": sum(len(groups[f]) for f in measured),
             "sentences": int(sum(data["_sentences"] for data in measured.values())),
             "target": {k: v for k, v in target.items() if not k.startswith(("connector:", "stance:"))},
@@ -122,16 +124,13 @@ def _distance(actual: dict, target: dict) -> dict[str, float]:
             for key, expected in target.items() if key in actual}
 
 
-def guidance(rows: list[dict], draft: str, section: str) -> dict:
+def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict:
     if not draft.strip() or len(draft) > 30_000:
         raise CorpusError("Provide a nonempty English draft of at most 30,000 characters")
-    target = aggregate(rows, section)
-    fallback = False
-    if target["status"] == "insufficient_evidence" and section:
-        target = aggregate(rows)
-        fallback = True
+    target = aggregate(rows, section, move)
     if target["status"] == "insufficient_evidence":
-        return {"status": "insufficient_evidence", "reason": target["reason"]}
+        return {"status": "insufficient_evidence", "section": target["section"], "move": target["move"],
+                "reason": target["reason"] + " Requested scope was not replaced with a broader profile."}
     actual = _measurement([draft])
     if not actual:
         return {"status": "insufficient_draft", "reason": "The draft needs at least one complete sentence."}
@@ -160,7 +159,7 @@ def guidance(rows: list[dict], draft: str, section: str) -> dict:
         directions.append(descriptors[key][direction])
         if len(directions) >= 4:
             break
-    return {"status": "rewrite_guidance", "section": section, "section_fallback": fallback,
+    return {"status": "rewrite_guidance", "section": section, "move": move,
             "profile_digest": target["profile_digest"], "draft_sha256": hashlib.sha256(draft.encode()).hexdigest(),
             "evidence": {k: target[k] for k in ("families", "passages", "sentences")},
             "target": target["target"], "draft_measurements": {k: round(actual[k], 3) for k in target["target"]},
@@ -177,10 +176,10 @@ def guidance(rows: list[dict], draft: str, section: str) -> dict:
             "limitations": "A model may ignore this plan or alter the text after checking. Measurements do not prove author likeness."}
 
 
-def assess(rows: list[dict], original: str, revised: str, section: str) -> dict:
+def assess(rows: list[dict], original: str, revised: str, section: str, move: str = "") -> dict:
     if not original.strip() or not revised.strip() or max(len(original), len(revised)) > 30_000:
         raise CorpusError("Provide both English texts of at most 30,000 characters")
-    profile = aggregate(rows, section)
+    profile = aggregate(rows, section, move)
     if profile["status"] == "insufficient_evidence":
         return profile
     base, output = _measurement([original]), _measurement([revised])

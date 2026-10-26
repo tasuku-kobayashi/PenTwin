@@ -7,7 +7,7 @@ from pentwin.style_engine import aggregate, assess, guidance
 def row(family, text, split="development", section="results", permission="no"):
     return {"candidate_id": f"candidate-{family}", "source_sha256": f"hash-{family}",
             "family_id": family, "split": split, "section": section, "text": text,
-            "model_excerpt_permission": permission, "status": "unpublished"}
+            "move": "finding", "model_excerpt_permission": permission, "status": "unpublished"}
 
 
 class StyleLogicTests(unittest.TestCase):
@@ -29,13 +29,15 @@ class StyleLogicTests(unittest.TestCase):
         changed = [*self.rows, row("other-holdout", "May may may. We we we.", "holdout")]
         self.assertEqual(result, aggregate(changed, "results"))
 
-    def test_rewrite_plan_prioritizes_authors_tendencies_and_falls_back(self):
+    def test_rewrite_plan_prioritizes_tendencies_only_with_scoped_evidence(self):
         draft = "The synthetic response was 12% in the assay. The result demonstrates an effect."
         result = guidance(self.rows, draft, "results")
         self.assertEqual(result["status"], "rewrite_guidance")
         self.assertIn("use calibrated uncertainty only where the evidence supports it", result["prioritized_edits"])
         self.assertNotIn("PRIVATE", json.dumps(result))
-        self.assertTrue(guidance(self.rows, draft, "discussion")["section_fallback"])
+        self.assertEqual(guidance(self.rows, draft, "discussion")["status"], "insufficient_evidence")
+        self.assertEqual(guidance(self.rows, draft, "results", "limitation")["status"], "insufficient_evidence")
+        self.assertEqual(guidance(self.rows, draft, "results", "finding")["status"], "rewrite_guidance")
         self.assertIn("function:the", result["target"])
 
     def test_revision_style_diagnostic_and_fidelity_alarms_are_separate(self):
