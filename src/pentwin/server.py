@@ -66,19 +66,19 @@ def build_server(run: Path) -> MCPServer:
                 "note": "Readiness is a data gate, not a validated writing quality score."}
 
     @server.tool()
-    def style_profile(section: str = "") -> dict:
+    def style_profile(section: str = "", move: str = "") -> dict:
         """Return locally measured author-style tendencies without returning any source passage, including when excerpt permission is no."""
-        return aggregate(load_corpus(run), section)
+        return aggregate(load_corpus(run), section, move)
 
     @server.tool()
-    def rewrite_plan(draft: str, section: str) -> dict:
+    def rewrite_plan(draft: str, section: str, move: str = "") -> dict:
         """Compare an English draft with local, family-balanced author style and tell the host LLM how to rewrite it without source excerpts."""
-        return guidance(load_corpus(run), draft, section)
+        return guidance(load_corpus(run), draft, section, move)
 
     @server.tool()
-    def assess_revision(original: str, revised: str, section: str) -> dict:
+    def assess_revision(original: str, revised: str, section: str, move: str = "") -> dict:
         """Measure style movement and flag lexical meaning changes; return text hashes, never an automatic factual approval."""
-        return assess(load_corpus(run), original, revised, section)
+        return assess(load_corpus(run), original, revised, section, move)
 
     @server.tool()
     def review_draft(source_facts: str, draft: str) -> dict:
