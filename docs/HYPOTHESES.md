@@ -14,6 +14,7 @@ The product objective is a more author-like **generated English life-sciences pa
 1. Added fixed function-word and discourse-cue aggregate features to the local engine, with no source text or rare lexical sequences in MCP output. They are exploratory diagnostic features, and the host LLM receives only aggregates.
 2. Re-ran whole-paper leave-one-out comparisons on the already inspected six-article corpus. The function-word result improved from the old 4/6 to 6/6, but a single high-frequency word contributes materially and no independent replication exists. Rhetorical cues alone gave no improvement. The new plan still shared 3/4 instructions across the two profiles.
 3. Extended the private blind-rating workflow with separate paired dimensions and a material-error gate. Synthetic tests exercise the gate. This is an implementation check, not human or model-generated quality evidence.
+4. Added an optional human-reviewed rhetorical-move filter and stopped automatic all-section fallback when a requested section or move lacks two independent development families. Synthetic tests and the MCP SDK integration pass. This reduces a known genre/section mismatch risk, but does not establish a likeness gain.
 
 ## Pre-registered next-stage decision rule
 
