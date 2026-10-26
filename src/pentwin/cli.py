@@ -22,7 +22,7 @@ HEADINGS = {
     "abstract": "abstract", "summary": "abstract",
     "introduction": "introduction", "background": "introduction",
     "methods": "methods", "materials and methods": "methods", "methodology": "methods",
-    "results": "results", "findings": "results",
+    "results": "results", "findings": "results", "results and discussion": "results",
     "discussion": "discussion", "conclusions": "conclusion", "conclusion": "conclusion",
 }
 STOP_HEADINGS = {"references", "bibliography", "acknowledgments", "acknowledgements", "supplementary material", "appendix"}
@@ -117,12 +117,14 @@ def _docx_candidates(source: Path):
 def _pdf_candidates(source: Path):
     import pdfplumber
 
+    section, stop = "other", False
     with pdfplumber.open(source) as doc:
         for page_number, page in enumerate(doc.pages, 1):
+            if stop:
+                break
             lines = page.extract_text_lines(return_chars=False)
             if not lines:
                 continue
-            section, stop = "other", False
             parts, first, prev = [], 0, None
 
             def candidate(last):
@@ -144,7 +146,7 @@ def _pdf_candidates(source: Path):
                     parts, prev = [], None
                     if key in STOP_HEADINGS:
                         stop = True
-                    else:
+                    elif not stop:
                         section, stop = HEADINGS[key], False
                     continue
                 if stop:
@@ -221,12 +223,15 @@ def prepare(manifest: Path, out: Path, seed: str) -> dict:
         raise CorpusError("Output directory must be empty; keep prior reviews and runs immutable")
     out.mkdir(parents=True, exist_ok=True)
     splits = assign_splits(papers, seed)
-    rows, metadata = [], []
+    rows, metadata, discarded_corrupt = [], [], 0
     for paper in papers:
         source = paper["_source"]
         source_digest = sha256(source)
         metadata.append({k: v for k, v in paper.items() if not k.startswith("_")} | {"source_path": str(source), "sha256": source_digest, "split": splits[paper["family_id"]]})
         for location, section, text, warning in extract(source):
+            if "\x00" in text or "\ufffd" in text:
+                discarded_corrupt += 1
+                continue
             if len(text.split()) < 5:
                 continue
             cid = hashlib.sha256(f"{paper['paper_id']}:{source_digest}:{location}:{text}".encode()).hexdigest()[:20]
@@ -244,7 +249,8 @@ def prepare(manifest: Path, out: Path, seed: str) -> dict:
         json.dumps({k: r[k] for k in LOCKED_FIELDS}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         for r in rows}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (out / "manifest.lock.json").write_text(json.dumps({"schema": 1, "seed": seed, "papers": metadata}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"papers": len(papers), "families": len(splits), "candidates": len(rows), "holdout_families": sum(v == "holdout" for v in splits.values())}
+    return {"papers": len(papers), "families": len(splits), "candidates": len(rows), "discarded_corrupt": discarded_corrupt,
+            "holdout_families": sum(v == "holdout" for v in splits.values())}
 
 
 def seal(out: Path) -> dict:
@@ -298,6 +304,7 @@ def seal(out: Path) -> dict:
     with target.open("w", encoding="utf-8") as fh:
         for row in accepted:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    (out / "corpus.sha256").write_text(sha256(target) + "\n", encoding="ascii")
     return {"accepted": len(accepted), "development": sum(r["split"] == "development" for r in accepted),
             "holdout": sum(r["split"] == "holdout" for r in accepted)}
 
@@ -311,9 +318,25 @@ def main(argv: list[str] | None = None) -> int:
     prep.add_argument("--seed", default="pentwin-pilot-v1")
     final = sub.add_parser("seal", help="Seal explicitly reviewed candidates into a split corpus")
     final.add_argument("output", type=Path)
+    server = sub.add_parser("serve", help="Run the local read-only MCP server over stdio")
+    server.add_argument("output", type=Path, help="Absolute path to a sealed private run")
+    blind = sub.add_parser("blind", help="Prepare a private, same-content blinded rating sheet")
+    blind.add_argument("cases", type=Path)
+    blind.add_argument("output", type=Path)
+    blind.add_argument("--seed", required=True)
+    report = sub.add_parser("ratings", help="Summarize a completed blinded rating sheet")
+    report.add_argument("output", type=Path)
     args = parser.parse_args(argv)
     try:
-        result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
+        if args.command == "serve":
+            from pentwin.server import serve
+            serve(args.output)
+            return 0
+        if args.command in {"blind", "ratings"}:
+            from pentwin.evaluation import make_blind_pairs, summarize
+            result = make_blind_pairs(args.cases, args.output, args.seed) if args.command == "blind" else summarize(args.output)
+        else:
+            result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
         print(f"PenTwin stopped: {error}", file=sys.stderr)
         return 2

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from docx import Document
 from reportlab.pdfgen import canvas
-from pentwin.cli import CorpusError, prepare, seal
+from pentwin.cli import CorpusError, _pdf_candidates, prepare, seal
 
 
 class StageOneTests(unittest.TestCase):
@@ -130,6 +130,22 @@ class StageOneTests(unittest.TestCase):
         self._write_rows(rows)
         with self.assertRaisesRegex(CorpusError, "authorship"):
             seal(self.out)
+
+    def test_pdf_section_continues_across_pages_and_references_stop(self):
+        source = self.root / "multipage.pdf"
+        pdf = canvas.Canvas(str(source))
+        pdf.drawString(50, 750, "Introduction")
+        pdf.drawString(50, 730, "The first synthetic paragraph establishes an artificial example for this test.")
+        pdf.showPage()
+        pdf.drawString(50, 750, "The second synthetic paragraph continues this introduction on the next page.")
+        pdf.drawString(50, 720, "References")
+        pdf.showPage()
+        pdf.drawString(50, 750, "This cited reference text must be excluded on all later pages.")
+        pdf.save()
+        rows = list(_pdf_candidates(source))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([r[1] for r in rows], ["introduction", "introduction"])
+        self.assertNotIn("cited reference", " ".join(r[2] for r in rows))
 
 
 if __name__ == "__main__":
