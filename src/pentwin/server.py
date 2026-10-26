@@ -52,7 +52,7 @@ def audit_draft(source_facts: str, draft: str) -> dict:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.3.0", instructions="For writing, call rewrite_plan and then assess_revision on the exact proposed draft. Never infer that a diagnostic score proves author likeness or factual accuracy.")
+    server = MCPServer("PenTwin", version="0.4.0", instructions="For writing, call rewrite_plan and then assess_revision on the exact proposed draft. Never infer that a diagnostic score proves author likeness or factual accuracy.")
 
     @server.tool()
     def corpus_status() -> dict:

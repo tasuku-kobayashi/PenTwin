@@ -11,7 +11,7 @@ from pathlib import Path
 from pentwin.cli import CorpusError
 
 RATING_FIELDS = ["case_id", "model", "section", "draft_a", "draft_b", "preferred", "likeness_a", "likeness_b",
-                 "naturalness_a", "naturalness_b", "facts_a", "facts_b", "comments"]
+                 "naturalness_a", "naturalness_b", "facts_a", "facts_b", "material_error_a", "material_error_b", "comments"]
 
 
 def make_blind_pairs(inputs: Path, output: Path, seed: str) -> dict:
@@ -64,6 +64,10 @@ def summarize(output: Path) -> dict:
         raise CorpusError("Rating rows changed")
     tally = {"guided": 0, "baseline": 0, "tie": 0}
     grouped: dict[str, dict[str, int]] = {}
+    paired = {name: {"guided": 0, "baseline": 0, "tie": 0} for name in ("likeness", "naturalness", "facts")}
+    means = {name: [] for name in paired}
+    fact_regressions = []
+    material_errors = {"guided": [], "baseline": [], "uncertain": []}
     for row in rows:
         fingerprint = hashlib.sha256(json.dumps({k: row[k] for k in RATING_FIELDS[:5]},
                                                 sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -74,8 +78,31 @@ def summarize(output: Path) -> dict:
         for field in ("likeness_a", "likeness_b", "naturalness_a", "naturalness_b", "facts_a", "facts_b"):
             if row[field] not in {"1", "2", "3", "4", "5"}:
                 raise CorpusError(f"Every case needs a 1-5 rating for {field}")
+        for field in ("material_error_a", "material_error_b"):
+            if row[field] not in {"yes", "no", "uncertain"}:
+                raise CorpusError(f"Every case needs yes/no/uncertain for {field}")
         winner = "tie" if row["preferred"] == "tie" else "guided" if row["preferred"] == key[row["case_id"]] else "baseline"
         tally[winner] += 1
         grouped.setdefault(row["model"], {"guided": 0, "baseline": 0, "tie": 0})[winner] += 1
+        for name in paired:
+            guided = int(row[f"{name}_{key[row['case_id']].lower()}"])
+            baseline = int(row[f"{name}_{'b' if key[row['case_id']] == 'A' else 'a'}"])
+            difference = guided - baseline
+            means[name].append(difference)
+            paired[name]["guided" if difference > 0 else "baseline" if difference < 0 else "tie"] += 1
+            if name == "facts" and difference < 0:
+                fact_regressions.append(row["case_id"])
+        for label, side in (("guided", key[row["case_id"]].lower()),
+                            ("baseline", "b" if key[row["case_id"]] == "A" else "a")):
+            status = row[f"material_error_{side}"]
+            if status == "yes":
+                material_errors[label].append(row["case_id"])
+            elif status == "uncertain":
+                material_errors["uncertain"].append(row["case_id"])
     return {"cases": len(rows), "preference": tally, "by_model": grouped,
-            "interpretation": "Descriptive paired preferences only. Human fact checking, independent raters, and more papers are required before claiming author likeness."}
+            "paired_dimensions": paired,
+            "mean_guided_minus_baseline": {name: round(sum(values) / len(values), 3) for name, values in means.items()},
+            "fact_rating_regression_cases": fact_regressions,
+            "material_error_cases": material_errors,
+            "quality_gate": "blocked" if material_errors["guided"] or material_errors["uncertain"] else "human_review_required",
+            "interpretation": "Descriptive ordinal ratings, not calibrated probabilities or independent factual verification. Any material factual error blocks a quality claim even if style improves. Obtain independent raters and more papers."}

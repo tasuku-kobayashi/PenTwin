@@ -23,6 +23,12 @@ CITATION = re.compile(r"\[(?:\d+[ ,;\-]*)+\]|\((?:[A-Z][A-Za-z'-]+\s+et\s+al\.,?
 CONNECTORS = ("however", "therefore", "thus", "moreover", "furthermore", "notably",
               "in contrast", "by contrast", "in addition", "taken together", "whereas")
 STANCE = ("suggest", "indicate", "demonstrate", "show", "reveal", "support", "observe", "report")
+FUNCTION_WORDS = ("although", "because", "but", "for", "if", "of", "or", "that", "the", "therefore", "this", "to", "which", "while", "with", "would")
+RHETORICAL = {
+    "contrast": re.compile(r"\b(?:although|however|whereas|but|in contrast|by contrast)\b", re.I),
+    "reason": re.compile(r"\b(?:because|therefore|thus|since|consequently)\b", re.I),
+    "limitation": re.compile(r"\b(?:limitation|limited|uncertain|caution|cannot|could not)\b", re.I),
+}
 SECTIONS = {"abstract", "introduction", "methods", "results", "discussion", "conclusion"}
 
 
@@ -39,6 +45,8 @@ def _measurement(texts: list[str]) -> dict[str, float]:
     total = len(sentences)
     tokens = sum(lengths)
     combined = " ".join(sentences).lower()
+    words = [word.lower() for sentence in sentences for word in WORD.findall(sentence)]
+    word_counts = Counter(words)
     counts = Counter()
     for phrase in CONNECTORS + STANCE:
         counts[phrase] = len(re.findall(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", combined))
@@ -50,6 +58,10 @@ def _measurement(texts: list[str]) -> dict[str, float]:
             "citation_rate": sum(bool(CITATION.search(s)) for s in sentences) / total,
             "semicolon_rate": sum(";" in s for s in sentences) / total,
             "parenthesis_rate": sum("(" in s for s in sentences) / total,
+            "question_rate": sum("?" in s for s in sentences) / total,
+            **{f"rhetoric:{name}": sum(bool(pattern.search(s)) for s in sentences) / total
+               for name, pattern in RHETORICAL.items()},
+            **{f"function:{word}": word_counts[word] / max(1, tokens) for word in FUNCTION_WORDS},
             **{f"connector:{word}": counts[word] / total for word in CONNECTORS},
             **{f"stance:{word}": counts[word] / total for word in STANCE},
             "_sentences": float(total), "_tokens": float(tokens)}
@@ -92,8 +104,8 @@ def aggregate(rows: list[dict], section: str = "") -> dict:
     return {"status": "provisional", "section": section or "all", "families": len(measured),
             "passages": sum(len(groups[f]) for f in measured),
             "sentences": int(sum(data["_sentences"] for data in measured.values())),
-            "target": {k: v for k, v in target.items() if ":" not in k},
-            "between_paper_range": {k: v for k, v in spread.items() if ":" not in k},
+            "target": {k: v for k, v in target.items() if not k.startswith(("connector:", "stance:"))},
+            "between_paper_range": {k: v for k, v in spread.items() if not k.startswith(("connector:", "stance:"))},
             "common_connectors": [word for word, _ in connector],
             "common_stance_verbs": [word for word, _ in stance],
             "profile_digest": fingerprint([r for r in chosen if r["family_id"] in measured]),
@@ -102,7 +114,11 @@ def aggregate(rows: list[dict], section: str = "") -> dict:
 
 def _distance(actual: dict, target: dict) -> dict[str, float]:
     scales = {"sentence_words": 12.0, "paragraph_sentences": 2.0}
-    return {key: round(abs(actual[key] - expected) / scales.get(key, 0.35), 3)
+    def scale(key: str) -> float:
+        if key.startswith("function:"):
+            return 0.025
+        return scales.get(key, 0.35)
+    return {key: round(abs(actual[key] - expected) / scale(key), 3)
             for key, expected in target.items() if key in actual}
 
 
@@ -129,11 +145,15 @@ def guidance(rows: list[dict], draft: str, section: str) -> dict:
         "passive_rate": ("prefer direct active phrasing where scientifically accurate", "use passive constructions selectively without obscuring the actor"),
         "semicolon_rate": ("reduce semicolons", "consider semicolons only where they clarify closely linked statements"),
         "parenthesis_rate": ("reduce parenthetical asides", "consider short parenthetical qualifications where useful"),
+        "question_rate": ("reduce rhetorical questions", "consider a question only where it serves the argument"),
+        "rhetoric:contrast": ("make contrasts more selective", "make evidence-based contrasts explicit"),
+        "rhetoric:reason": ("use causal transitions more selectively", "make the reasoning between claims explicit where supported"),
+        "rhetoric:limitation": ("avoid redundant limitation language", "state relevant limitations explicitly without inventing uncertainty"),
     }
     for key in sorted(descriptors, key=lambda name: -differences.get(name, 0)):
         if differences.get(key, 0) < 0.22:
             continue
-        spread = target["between_paper_range"][key]
+        spread = target["between_paper_range"].get(key, 0)
         if spread > (8 if key == "sentence_words" else 0.7):
             continue  # Papers disagree; no author-wide target is defensible.
         direction = 0 if actual[key] > target["target"][key] else 1
@@ -169,7 +189,8 @@ def assess(rows: list[dict], original: str, revised: str, section: str) -> dict:
     target = profile["target"]
     before, after = _distance(base, target), _distance(output, target)
     selected = ("sentence_words", "paragraph_sentences", "hedge_rate", "first_person_rate",
-                "passive_rate", "semicolon_rate", "parenthesis_rate")
+                "passive_rate", "semicolon_rate", "parenthesis_rate", "question_rate",
+                "rhetoric:contrast", "rhetoric:reason", "rhetoric:limitation")
     # Diagnostic only: no optimizing or claiming success based on this aggregate.
     style = {"before": round(sum(before[k] for k in selected) / len(selected), 3),
              "after": round(sum(after[k] for k in selected) / len(selected), 3)}

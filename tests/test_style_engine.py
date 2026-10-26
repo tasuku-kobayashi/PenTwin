@@ -23,6 +23,8 @@ class StyleLogicTests(unittest.TestCase):
         self.assertEqual(result["status"], "provisional")
         self.assertEqual(result["families"], 2)
         self.assertGreater(result["target"]["hedge_rate"], 0)
+        self.assertIn("function:the", result["target"])
+        self.assertIn("rhetoric:contrast", result["target"])
         self.assertNotIn("PRIVATE", json.dumps(result))
         changed = [*self.rows, row("other-holdout", "May may may. We we we.", "holdout")]
         self.assertEqual(result, aggregate(changed, "results"))
@@ -34,6 +36,7 @@ class StyleLogicTests(unittest.TestCase):
         self.assertIn("use calibrated uncertainty only where the evidence supports it", result["prioritized_edits"])
         self.assertNotIn("PRIVATE", json.dumps(result))
         self.assertTrue(guidance(self.rows, draft, "discussion")["section_fallback"])
+        self.assertIn("function:the", result["target"])
 
     def test_revision_style_diagnostic_and_fidelity_alarms_are_separate(self):
         original = "The synthetic response was 12% in the assay. The result demonstrates an effect."
