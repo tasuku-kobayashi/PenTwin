@@ -2,7 +2,7 @@
 
 ## What is implemented
 
-The input is a sealed, human-reviewed set of English paragraphs from at least three independent papers, with one family reserved as holdout. Only development families contribute to the style profile. The server reads the private text on the user's computer, computes measurements, and returns aggregate values. It does not fine-tune, train, embed, or send the source paragraphs to an LLM. No paper excerpt permission is needed for this aggregate-only workflow; there is no raw-example MCP tool.
+The input is a sealed, human-reviewed set of English paragraphs from at least three independent papers, with one family reserved as holdout. Only development families contribute to the style profile. The server reads the private text on the user's computer, computes measurements, and returns aggregate values. It does not fine-tune, train, embed, or send the source paragraphs to an LLM. The manifest does not request excerpt permission for this aggregate-only workflow; there is no raw-example MCP tool.
 
 For a section, each paper first produces a vector: median sentence words; sentences per paragraph; fractions of sentences with hedges, first-person pronouns, passive-like verbs, citation-like markers, semicolons, or parentheses; and usage of a small fixed vocabulary of connectors and stance verbs. The component-wise median across independent paper families is the target. A component with large disagreement across papers does not yield a rewrite instruction. A section with fewer than two usable families falls back to the whole development set and reports that fallback. This does not infer individual phrasing, rare word choices, or the writer's scientific reasoning.
 
