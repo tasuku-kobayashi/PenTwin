@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from pentwin.cli import CorpusError
 from pentwin.style_engine import aggregate, assess, guidance
 
 
@@ -52,6 +53,21 @@ class StyleLogicTests(unittest.TestCase):
         self.assertIn("21%", altered["lexical_alarms"]["new_numeric_tokens"])
         changed_citation = assess(self.rows, original + " [12]", revision + " [13]", "results")
         self.assertEqual(changed_citation["citation_token_changes"], {"added": ["[13]"], "removed": ["[12]"]})
+
+    def test_protected_spans_preserve_symbols_and_report_exact_changes(self):
+        original = "The assay showed 12.5 mg/mL in group A [12]. It was not superior to group B."
+        spans = ["12.5 mg/mL", "group A", "[12]", "not superior to"]
+        plan = guidance(self.rows, original, "results", protected_spans=spans)
+        self.assertEqual(plan["protected_spans"], spans)
+        revised = "We observed 12.5 mg/mL in group A [12]. It was superior to group B."
+        checked = assess(self.rows, original, revised, "results", protected_spans=spans)
+        self.assertEqual(checked["protected_span_changes"],
+                         [{"span": "not superior to", "original_count": 1, "revision_count": 0}])
+        self.assertEqual(checked["status"], "needs_human_review")
+        self.assertEqual(assess(self.rows, original, original, "results", protected_spans=spans)
+                         ["protected_span_changes"], [])
+        with self.assertRaisesRegex(CorpusError, "must occur"):
+            guidance(self.rows, original, "results", protected_spans=["missing term"])
 
 
 if __name__ == "__main__":
