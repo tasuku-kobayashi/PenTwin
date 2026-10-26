@@ -1,4 +1,4 @@
-# Local style engine (experimental v0.7)
+# Local style engine (experimental v0.8)
 
 ## What is implemented
 
@@ -32,3 +32,7 @@ See [hypotheses and next independent experiment](HYPOTHESES.md).
 ## Automated prose pilot (2026-10-26)
 
 A private six-draft pilot exposed a whole-paper paragraph-length mismatch for short outputs. The raw seven-feature score improved for only one writer (3/6 overall); a post-inspection short-passage metric improved for both writers (6/6), but sentence length alone distinguished all guided outputs and these texts were written with the target aggregates in view. See [full results and limits](GENERATED_STYLE_VALIDATION.md). The guidance now includes numeric soft targets for stable features, and revision assessment displays both distances. Neither measurement establishes recognizable author voice.
+
+## Conditional style cards
+
+The additional [style card](STYLE_CARD.md) uses reviewed move labels, per-role generic wording and stance, and repeated move transitions. It abstains when available source texts do not support role-specific signals. It has passed synthetic logic and stdio tests; the existing private editorial cohorts do not contain enough reviewed role evidence to assess whether the cards improve actual generated prose.
