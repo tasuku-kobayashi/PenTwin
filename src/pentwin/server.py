@@ -41,7 +41,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.9.0", instructions="For authorial style, inspect author_style_card, call rewrite_plan and then assess_revision on the exact proposed draft. Weak clues are exploratory. Use axis_plan to isolate wording, cue order or stance in comparisons. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.10.0", instructions="For authorial style, inspect author_style_card, call rewrite_plan and then assess_revision on the exact proposed draft. Use generation_protocol for matched generic, card and critique conditions. Weak clues are exploratory. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -97,6 +97,20 @@ def build_server(run: Path) -> MCPServer:
                 "profile_digest": card.get("profile_digest"),
                 "instructions": exploratory_instructions(card, axes[axis]),
                 "limitations": "Experimental weak clues. Compare same-content outputs against a generic academic baseline; no axis score proves author likeness."}
+
+    @server.tool()
+    def generation_protocol(section: str, move: str = "") -> dict:
+        """Provide matched generation conditions without exposing source samples."""
+        card = build_exploratory_card(load_corpus(run), section, move)
+        edits = exploratory_instructions(card, ("wording", "cue_order", "stance"))
+        common = "Use the same user-supplied content brief, target word count, section, host model and decoding settings for every condition. Return prose only."
+        return {"status": "experimental_plan" if edits else "insufficient_evidence",
+                "section": section, "move": move, "profile_digest": card.get("profile_digest"),
+                "shared_control": common,
+                "conditions": {"zero_shot": ["Write an English academic passage for the requested section from the content brief."],
+                               "card": ["Write an English academic passage for the requested section from the content brief.", *edits],
+                               "card_critique": ["First produce the card-condition passage. Privately compare it to the card clues, name generic substitutions and revise once; return only the final passage.", *edits]},
+                "note": "Wang et al. tested actual few-shot samples; these no-excerpt card conditions are indirect and unvalidated. The critique condition is inspired by Cho et al., not an implementation of TICL. Keep the same baseline and content across authors; evaluate privately with paper-eval."}
 
     @server.tool()
     def assess_revision(original: str, revised: str, section: str, move: str = "") -> dict:
