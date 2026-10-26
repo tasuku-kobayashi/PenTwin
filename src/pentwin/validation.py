@@ -51,15 +51,16 @@ def _confound_audit(groups: dict[str, list[dict]], authors: list[str]) -> dict:
 
 
 def diagnose(manifest_path: Path) -> dict:
-    """Compare two anonymous authors, exactly three independent papers each.
+    """Compare two anonymous authors with three or five independent papers each.
 
     The report is descriptive, not a generation-quality or authorship certificate.
     File paths, paper text and digests never appear in the returned JSON.
     """
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     items = payload.get("papers") if isinstance(payload, dict) else None
-    if not isinstance(items, list) or len(items) != 6:
-        raise CorpusError("Diagnostic requires exactly six papers: three per anonymous author")
+    if not isinstance(items, list) or len(items) not in (6, 10):
+        raise CorpusError("Diagnostic requires six or ten papers: three or five per anonymous author")
+    per_author_required = len(items) // 2
     groups: dict[str, list[dict]] = defaultdict(list)
     seen_ids, seen_paths, seen_hashes, strata = set(), set(), set(), set()
     for item in items:
@@ -87,8 +88,8 @@ def diagnose(manifest_path: Path) -> dict:
         if len(body.split()) < 100 or not _measurement([body]):
             raise CorpusError("Each paper needs at least 100 words of reviewed body text")
         groups[author].append({"id": paper_id, "text": body, "metadata": item})
-    if len(groups) != 2 or any(len(papers) != 3 for papers in groups.values()) or len(strata) != 1:
-        raise CorpusError("Use two authors with three papers each in one matched stratum")
+    if len(groups) != 2 or any(len(papers) != per_author_required for papers in groups.values()) or len(strata) != 1:
+        raise CorpusError(f"Use two authors with {per_author_required} papers each in one matched stratum")
 
     def profile(papers: list[dict]) -> dict:
         rows = [{"candidate_id": paper["id"], "source_sha256": paper["id"],
@@ -123,10 +124,10 @@ def diagnose(manifest_path: Path) -> dict:
                      "loss_to_length": sum(c["scores"][name]["result"] != "own" and
                                            c["scores"]["length"]["result"] == "own" for c in cases)}
               for name in FEATURES if name != "length"}
-    return {"status": "diagnostic_only", "stratum": next(iter(strata)), "papers": 6,
+    return {"status": "diagnostic_only", "stratum": next(iter(strata)), "papers": len(items),
             "feature_sets": {name: list(keys) for name, keys in FEATURES.items()},
             "per_author_correct": per_author, "total_correct": total,
             "increment_over_length": {name: total[name] - total["length"] for name in FEATURES if name != "length"},
             "paired_vs_length": paired, "confounds": _confound_audit(groups, authors),
             "cases": cases,
-            "limitations": "Two authors and six papers cannot establish author likeness. Match genre, section, topic and time where possible; inspect source extraction and report confounds. This does not evaluate generated text."}
+            "limitations": "Two authors and a small corpus cannot establish author likeness. Match genre, section, topic and time where possible; inspect source extraction and report confounds. This does not evaluate generated text."}
