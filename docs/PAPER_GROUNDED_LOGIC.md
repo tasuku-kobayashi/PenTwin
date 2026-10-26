@@ -1,5 +1,7 @@
 # Paper-grounded logic and calibration (2026-10-26)
 
+**Historical calibration:** the first-seven-sentence results below have been superseded by the [200-word axis-matched protocol](AXIS_MATRIX_AND_OA_VALIDATION.md). They are retained to explain the design history, not current evaluator eligibility.
+
 ## Literature boundary
 
 The design basis is [Wang et al. (2025)](https://aclanthology.org/2025.findings-emnlp.532/) and papers **directly cited in its reference list**: [Bhandarkar et al. (2024)](https://aclanthology.org/2024.personalize-1.6/) and [Cho et al. (2025)](https://aclanthology.org/2025.naacl-findings.326.pdf). The latter two provide context for prompt-only emulation and iterative negative-example explanations. No unverified citing work informs this implementation. Previous PenTwin experiments are auxiliary observations, not literature evidence.
