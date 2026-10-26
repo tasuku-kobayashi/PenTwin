@@ -30,6 +30,13 @@ class StyleLogicTests(unittest.TestCase):
         changed = [*self.rows, row("other-holdout", "May may may. We we we.", "holdout")]
         self.assertEqual(result, aggregate(changed, "results"))
 
+    def test_wording_preference_requires_two_paper_families(self):
+        rows = [
+            row("a", "However, we observed the synthetic response. However, we reported another observation."),
+            row("b", "We observed the synthetic response today. We reported another synthetic observation today."),
+        ]
+        self.assertNotIn("however", aggregate(rows, "results")["common_connectors"])
+
     def test_rewrite_plan_prioritizes_tendencies_only_with_scoped_evidence(self):
         draft = "The synthetic response was 12% in the assay. The result demonstrates an effect."
         result = guidance(self.rows, draft, "results")
