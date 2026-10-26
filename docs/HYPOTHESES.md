@@ -4,6 +4,8 @@
 
 **v0.8 test:** A role-conditioned style card now extracts repeated wording, within-writer differences in stance between roles, and repeated move transitions. Synthetic tests show distinct cards for two engineered writers. In two private editorial cohorts, all four writer cards abstained: the articles have no confirmed paragraph-level move labels and did not yield repeated fixed-vocabulary wording or transitions. This is a negative data-readiness result, not evidence of generated author likeness. See [style card record](STYLE_CARD.md).
 
+**v0.9 correction:** Strict abstention does not establish that weak clues are useless. A graded exploratory card now retains one-paper lexical candidates and approximate cue sequences with confidence labels. In a controlled, same-content probe scored against inspected held-out articles, weak wording improved 0/4 cases, cue order 2/4, stance 2/4 and combined 2/4. Results differ by writer and do not establish recognizable voice. See [axis probe](WEAK_CARD_ABLATION.md).
+
 The product objective is a more author-like **generated English life-sciences passage** with unchanged scientific meaning. Identifying the author of an existing article is a useful intermediate check, not the objective itself. The six-article exploratory corpus has already influenced design decisions and must not be used for an independent release claim. No participant identity, source passage, or private corpus belongs in this repository.
 
 Before further implementation or validation, use the claim ladder, confound analysis and prospective decision rules in [the theory record](THEORY_BEFORE_VALIDATION.md). The 5/6 same-column result is an exploration signal, not a product threshold.

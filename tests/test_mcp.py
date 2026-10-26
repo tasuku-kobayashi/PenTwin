@@ -24,6 +24,7 @@ class MCPTests(unittest.TestCase):
             doc.add_heading("Introduction", 1)
             doc.add_paragraph(f"A synthetic pathway in set {i} may alter expression. This preliminary finding requires an independent assay to assess the response.")
             doc.add_paragraph(f"In set {i}, the control and treatment samples were assayed separately. The observations are limited to these artificial measurements.")
+            doc.add_paragraph(f"We observed a further artificial pattern in set {i} during this synthetic trial.")
             source = self.root / f"sample{i}.docx"
             doc.save(source)
             papers.append({"paper_id": f"p{i}", "family_id": f"f{i}", "file": source.name,
@@ -75,7 +76,7 @@ class MCPTests(unittest.TestCase):
                                            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
             async with Client(server) as client:
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "rewrite_plan", "assess_revision"})
+                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "axis_plan", "rewrite_plan", "assess_revision"})
                 status = await client.call_tool("corpus_status", {})
                 self.assertFalse(status.is_error)
                 self.assertTrue(json.loads(status.content[0].text)["sealed"])
@@ -90,6 +91,19 @@ class MCPTests(unittest.TestCase):
                 card = await client.call_tool("author_style_card", {"section": "introduction"})
                 self.assertFalse(card.is_error)
                 self.assertNotIn("synthetic pathway", json.dumps(json.loads(card.content[0].text)))
+                isolated = await client.call_tool("axis_plan", {
+                    "draft": "The synthetic pathway produced a measured response in this assay.",
+                    "section": "introduction", "axis": "none"})
+                self.assertFalse(isolated.is_error)
+                self.assertEqual(json.loads(isolated.content[0].text)["instructions"], [])
+                stance = await client.call_tool("axis_plan", {
+                    "draft": "The synthetic pathway produced a measured response in this assay.",
+                    "section": "introduction", "axis": "stance"})
+                self.assertFalse(stance.is_error)
+                stance_payload = json.loads(stance.content[0].text)
+                self.assertEqual(stance_payload["status"], "experimental_plan")
+                self.assertTrue(all("stance" not in instruction or "soft" in instruction
+                                    for instruction in stance_payload["instructions"]))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
                                                                "section": "introduction"})
                 self.assertFalse(plan.is_error)

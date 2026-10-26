@@ -1,4 +1,4 @@
-# Local style engine (experimental v0.8)
+# Local style engine (experimental v0.9)
 
 ## What is implemented
 
@@ -10,7 +10,7 @@ For a section, each paper first produces a vector: median sentence words; senten
 
 ## Verification and limits
 
-- Synthetic tests check that local aggregation works when `model_excerpt_permission=no`, holdout text has no effect, no original passage appears in an MCP response, the rewrite plan responds to engineered stylistic differences, four style-only MCP tools respond, and the official SDK can call them over stdio.
+- Synthetic tests check that local aggregation works when `model_excerpt_permission=no`, holdout text has no effect, no original passage appears in an MCP response, the rewrite plan responds to engineered stylistic differences, the style-only MCP tools respond, and the official SDK can call them over stdio.
 - The private four-PDF extraction smoke test produced enough provisional all-section candidates for the algorithm to run but too few independently supported candidates in individual sections. The rows have **not** been visually reviewed or confirmed as primarily written by the target author, so these measurements are not a valid style profile and are not served through MCP.
 - Heuristics such as passive-voice detection and sentence splitting can misread scientific notation, abbreviations, tables, and OCR. Family-balanced averages can still track journal and topic differences. A lower diagnostic distance is not proof of human-recognizable authorship.
 - Validate with confirmed writing contributions and automated, same-content comparisons across writers and sections, using ordinary and generic academic controls. Keep evaluation papers untouched while iterating. See [evaluation protocol](EVALUATION.md).
@@ -36,3 +36,5 @@ A private six-draft pilot exposed a whole-paper paragraph-length mismatch for sh
 ## Conditional style cards
 
 The additional [style card](STYLE_CARD.md) uses reviewed move labels, per-role generic wording and stance, and repeated move transitions. It abstains when available source texts do not support role-specific signals. It has passed synthetic logic and stdio tests; the existing private editorial cohorts do not contain enough reviewed role evidence to assess whether the cards improve actual generated prose.
+
+The v0.9 exploratory mode retains weaker section-level clues with paper support and confidence labels. `axis_plan` isolates one dimension for controlled tests. Its first [held-out axis probe](WEAK_CARD_ABLATION.md) found no wording improvement (0/4), with cue order and stance improving only for one writer each (2/4). These results came from deterministic edits and an inspected editorial cohort, so no efficacy claim follows.

@@ -128,6 +128,7 @@ def _distance(actual: dict, target: dict) -> dict[str, float]:
 
 def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict:
     from pentwin.style_card import build_style_card, card_instructions
+    from pentwin.exploratory_card import build_exploratory_card, exploratory_instructions
     if not draft.strip() or len(draft) > 30_000:
         raise CorpusError("Provide a nonempty English draft of at most 30,000 characters")
     target = aggregate(rows, section, move)
@@ -138,6 +139,7 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
     if not actual:
         return {"status": "insufficient_draft", "reason": "The draft needs at least one complete sentence."}
     card = build_style_card(rows, section, move)
+    weak = build_exploratory_card(rows, section, move)
     differences = _distance(actual, target["target"])
     directions = []
     stable = {}
@@ -191,12 +193,14 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
                                     "stance_verbs": target["common_stance_verbs"]},
             "conditional_style_card": card,
             "role_conditioned_instructions": card_instructions(card, move),
+            "exploratory_style_card": weak,
+            "exploratory_instructions": exploratory_instructions(weak),
             "revision_critique_prompt": (
                 "After drafting, compare your output with each supported role_conditioned_instruction. "
                 "Identify generic scholarly transitions or reporting verbs that replaced a supported preference, "
                 "and revise once where the replacement fits. Skip unsupported roles and do not insert a preferred word repeatedly."
                 if card["status"] == "provisional" else
-                "Role-conditioned evidence is insufficient; do not claim that lexical choices or explanation order match this writer."
+                "Strict role evidence is insufficient. Try low-confidence clues only as experiments, identify generic substitutions, and revise once without claiming author-specificity."
             ),
             "rewrite_contract": [
                 "First plan the explanation order using supported role transitions when applicable, then write each role using its supported wording and stance tendencies.",
@@ -204,6 +208,7 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
                 "Use the numeric tendencies in prioritized_edits as soft targets, never as a sentence-by-sentence quota; skip an instruction if it does not fit this passage.",
                 "Avoid generic academic polish that erases distinctive habits. Do not quote or imitate any source passage verbatim.",
                 "If conditional_style_card has insufficient_role_evidence, do not invent role-specific author habits.",
+                "Exploratory instructions are tentative, including terms supported by only one paper. Keep their confidence labels and do not call them established author habits.",
                 "Treat style guidance as suggestions; this tool does not evaluate scientific claims or preserve their meaning.",
                 "After writing, call assess_revision with the exact original and proposed text to inspect style movement; do not call its score author likeness.",
             ],

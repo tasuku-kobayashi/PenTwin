@@ -10,6 +10,7 @@ from mcp.server import MCPServer
 from pentwin.cli import CorpusError, sha256
 from pentwin.style_engine import aggregate, assess, guidance
 from pentwin.style_card import build_style_card
+from pentwin.exploratory_card import build_exploratory_card, exploratory_instructions
 
 
 def load_corpus(run: Path) -> list[dict]:
@@ -40,7 +41,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.8.0", instructions="For authorial style, inspect author_style_card, call rewrite_plan and then assess_revision on the exact proposed draft. Unsupported role preferences must be omitted. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.9.0", instructions="For authorial style, inspect author_style_card, call rewrite_plan and then assess_revision on the exact proposed draft. Weak clues are exploratory. Use axis_plan to isolate wording, cue order or stance in comparisons. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -65,14 +66,37 @@ def build_server(run: Path) -> MCPServer:
         return profile
 
     @server.tool()
-    def author_style_card(section: str, move: str = "") -> dict:
-        """Return supported role-conditioned wording, stance and move transitions; never return original passages."""
-        return build_style_card(load_corpus(run), section, move)
+    def author_style_card(section: str, move: str = "", evidence_mode: str = "exploratory") -> dict:
+        """Return weak graded clues by default, or strict role evidence; never return original passages."""
+        rows = load_corpus(run)
+        if evidence_mode == "exploratory":
+            return build_exploratory_card(rows, section, move)
+        if evidence_mode == "strict":
+            return build_style_card(rows, section, move)
+        raise CorpusError("evidence_mode must be exploratory or strict")
 
     @server.tool()
     def rewrite_plan(draft: str, section: str, move: str = "") -> dict:
         """Compare an English draft with local, family-balanced author style and tell the host LLM how to rewrite it without source excerpts."""
         return guidance(load_corpus(run), draft, section, move)
+
+    @server.tool()
+    def axis_plan(draft: str, section: str, axis: str, move: str = "") -> dict:
+        """Isolate one weak style axis or a combined plan for controlled generation comparisons."""
+        import hashlib
+        if not draft.strip() or len(draft) > 30_000:
+            raise CorpusError("Provide a nonempty draft of at most 30,000 characters")
+        axes = {"wording": ("wording",), "cue_order": ("cue_order",), "stance": ("stance",),
+                "combined": ("wording", "cue_order", "stance"), "none": ()}
+        if axis not in axes:
+            raise CorpusError("axis must be wording, cue_order, stance, combined or none")
+        card = build_exploratory_card(load_corpus(run), section, move)
+        return {"status": "experimental_plan" if card["status"] == "exploratory" else "insufficient_evidence",
+                "axis": axis, "section": section, "move": move,
+                "draft_sha256": hashlib.sha256(draft.encode()).hexdigest(),
+                "profile_digest": card.get("profile_digest"),
+                "instructions": exploratory_instructions(card, axes[axis]),
+                "limitations": "Experimental weak clues. Compare same-content outputs against a generic academic baseline; no axis score proves author likeness."}
 
     @server.tool()
     def assess_revision(original: str, revised: str, section: str, move: str = "") -> dict:
