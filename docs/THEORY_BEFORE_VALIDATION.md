@@ -1,5 +1,7 @@
 # What a 5/6 attribution result can establish
 
+**Scope update (2026-10-26):** PenTwin now evaluates authorial style only. Earlier scientific-fidelity gates, protected spans and material-error criteria below document the previous design; they are superseded. Current evaluation uses blinded author likeness, distinctiveness and naturalness, with scientific verification delegated to a separate service. See [current evaluation](EVALUATION.md).
+
 Status: theoretical decision record, 2026-10-26. This document defines the next experiment **before** another implementation or validation cycle. It contains no participant identity or source passage.
 
 ## The observation and its limits
