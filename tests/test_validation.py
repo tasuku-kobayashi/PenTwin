@@ -6,9 +6,41 @@ from pathlib import Path
 from pentwin.cli import CorpusError
 from pentwin.validation import diagnose
 from pentwin.automatic_eval import evaluate_generations
+from pentwin.heldout_eval import evaluate_heldout_axes
 
 
 class ValidationTests(unittest.TestCase):
+    def test_heldout_axis_evaluation_keeps_text_private_and_checks_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            papers = []
+            for author in ("A", "B"):
+                for index in range(3):
+                    paper_id = f"{author}{index}"
+                    sentence = ("We suggest the synthetic finding could be relevant here. " if author == "A"
+                                else "We report the synthetic finding in the artificial samples. ")
+                    (root / f"{paper_id}.txt").write_text(sentence * (12 + index), encoding="utf-8")
+                    papers.append({"author_id": author, "paper_id": paper_id,
+                                   "stratum": "synthetic", "path": f"{paper_id}.txt"})
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"papers": papers}))
+            baseline = "The synthetic result was recorded in an artificial assay. " * 7
+            cases = [{"case_id": f"{content}-{author}", "content_id": content, "author_id": author,
+                      "axis": "wording", "model": "synthetic", "baseline": baseline,
+                      "guided": ("We suggest the synthetic finding in this artificial assay. " if author == "A"
+                                 else "We report the synthetic finding in this artificial assay. ") * 7}
+                     for content in ("c1", "c2") for author in ("A", "B")]
+            path = root / "cases.json"
+            path.write_text(json.dumps({"cases": cases}))
+            result = evaluate_heldout_axes(manifest, path)
+            self.assertEqual(result["cases"], 4)
+            self.assertEqual(result["summary"]["wording"]["cases"], 4)
+            self.assertNotIn("synthetic result was recorded", json.dumps(result))
+            cases[1]["baseline"] += "Altered baseline."
+            path.write_text(json.dumps({"cases": cases}))
+            with self.assertRaisesRegex(CorpusError, "same baseline"):
+                evaluate_heldout_axes(manifest, path)
+
     def test_automated_proxy_requires_same_content_controls(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
