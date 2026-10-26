@@ -1,0 +1,28 @@
+{
+  "papers": [
+    {
+      "paper_id": "paper-001",
+      "family_id": "study-001",
+      "file": "data/paper-001.docx",
+      "authorship": "primary_confirmed",
+      "status": "published",
+      "model_excerpt_permission": "yes"
+    },
+    {
+      "paper_id": "paper-002",
+      "family_id": "study-002",
+      "file": "data/paper-002.pdf",
+      "authorship": "primary_confirmed",
+      "status": "published",
+      "model_excerpt_permission": "yes"
+    },
+    {
+      "paper_id": "paper-003",
+      "family_id": "study-003",
+      "file": "data/paper-003.tex",
+      "authorship": "primary_confirmed",
+      "status": "unpublished",
+      "model_excerpt_permission": "no"
+    }
+  ]
+}

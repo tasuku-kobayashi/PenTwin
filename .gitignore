@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+data/
+corpus/
+output/
+*.pdf
+*.docx
+*.tex
+review.csv
+corpus.jsonl
+manifest.lock.json
+candidates.lock.json
+manifest.json
