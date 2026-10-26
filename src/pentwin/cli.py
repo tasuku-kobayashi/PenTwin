@@ -10,6 +10,8 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -350,11 +352,21 @@ def main(argv: list[str] | None = None) -> int:
     qualified = sub.add_parser("qualify-eval", help="Screen evaluator features on two disjoint human cohorts")
     qualified.add_argument("first", type=Path)
     qualified.add_argument("second", type=Path)
+    pmc = sub.add_parser("prepare-pmc", help="Extract six locally reviewed CC BY JATS Discussion sections")
+    pmc.add_argument("spec", type=Path)
+    pmc.add_argument("output", type=Path)
+    fetch_pmc = sub.add_parser("fetch-pmc", help="Download one CC BY candidate fullTextXML for private review")
+    fetch_pmc.add_argument("pmcid")
+    fetch_pmc.add_argument("output", type=Path)
     factorial = sub.add_parser("factorial-eval", help="Two-cohort gated, matched 2^3 card experiment")
     factorial.add_argument("first", type=Path)
     factorial.add_argument("second", type=Path)
     factorial.add_argument("cases", type=Path)
     factorial.add_argument("--sbert-model-dir", type=Path)
+    factorial.add_argument("--semantic-scores", type=Path, help="Private imported cosine scores tied to text hashes")
+    template = sub.add_parser("semantic-template", help="Create a private hash-bound score template for external SBERT")
+    template.add_argument("cases", type=Path)
+    template.add_argument("output", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "serve":
@@ -387,14 +399,25 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "qualify-eval":
             from pentwin.qualified_eval import qualify_evaluators
             result = qualify_evaluators(args.first, args.second)
+        elif args.command == "prepare-pmc":
+            from pentwin.pmc_corpus import build_manifest
+            result = build_manifest(args.spec, args.output)
+        elif args.command == "fetch-pmc":
+            from pentwin.pmc_corpus import fetch_open_access_xml
+            fetch_open_access_xml(args.pmcid, args.output)
+            result = {"status": "downloaded_for_private_review"}
         elif args.command == "factorial-eval":
             from pentwin.qualified_eval import evaluate_factorial
             from pentwin.semantic_guard import load_local_encoder
             encoder = load_local_encoder(args.sbert_model_dir) if args.sbert_model_dir else None
-            result = evaluate_factorial(args.first, args.second, args.cases, encoder)
+            result = evaluate_factorial(args.first, args.second, args.cases, encoder, args.semantic_scores)
+        elif args.command == "semantic-template":
+            from pentwin.semantic_guard import make_semantic_template
+            result = make_semantic_template(args.cases, args.output)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
-    except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+    except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired,
+            urllib.error.URLError, ET.ParseError) as error:
         print(f"PenTwin stopped: {error}", file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False))

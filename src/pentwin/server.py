@@ -41,7 +41,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.11.0", instructions="Use generation_protocol for factorial style conditions and a separately authored target opening for +Snippet. Card clues and calibrated distances are exploratory. Use qualify-eval on two human cohorts before factorial-eval; semantic scoring needs a local SBERT model. Scientific claims and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.12.0", instructions="Use generation_protocol for factorial style conditions and a separate authored target opening for +Snippet. Use offline_evaluate to score private external drafts and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two human cohorts; failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -104,6 +104,16 @@ def build_server(run: Path) -> MCPServer:
         """Provide eight factorial conditions; optionally use a separate human target's opening."""
         from pentwin.ablation_protocol import conditions
         return conditions(load_corpus(run), section, move, target_text, confirmed_author_written)
+
+    @server.tool()
+    def offline_evaluate(first_manifest: str, second_manifest: str, cases_file: str,
+                         semantic_scores_file: str = "") -> dict:
+        """Evaluate locally injected GPT/Claude drafts and hash-bound SBERT scores without API calls."""
+        from pentwin.qualified_eval import evaluate_factorial
+        paths = [Path(first_manifest), Path(second_manifest), Path(cases_file)]
+        if any(not p.is_absolute() for p in paths) or (semantic_scores_file and not Path(semantic_scores_file).is_absolute()):
+            raise CorpusError("Offline inputs need absolute private paths")
+        return evaluate_factorial(*paths, semantic_scores_path=Path(semantic_scores_file) if semantic_scores_file else None)
 
     @server.tool()
     def assess_revision(original: str, revised: str, section: str, move: str = "") -> dict:

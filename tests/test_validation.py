@@ -19,14 +19,14 @@ class ValidationTests(unittest.TestCase):
                 for index in range(3):
                     paper_id = f"{author}{index}"
                     # Distinct documents but the same short-window style.
-                    body = ("The artificial assay was repeated with a control sample. " * 8 +
-                            f"Unique synthetic body marker {paper_id} was checked after the experiment. " * 8)
+                    body = ("The artificial assay was repeated with a control sample. " * 16 +
+                            f"Unique synthetic body marker {paper_id} was checked after the experiment. " * 16)
                     (root / f"{paper_id}.txt").write_text(body, encoding="utf-8")
                     papers.append({"author_id": author, "paper_id": paper_id,
                                    "stratum": "synthetic", "path": f"{paper_id}.txt"})
             manifest = root / "papers.json"
             manifest.write_text(json.dumps({"papers": papers}), encoding="utf-8")
-            baseline = "The artificial assay was repeated with a control sample. " * 7
+            baseline = "The artificial assay was repeated with a control sample. " * 24
             cases = [{"case_id": f"{author}{index}", "content_id": f"c{index}",
                       "author_id": author, "model": "synthetic", "section": "discussion",
                       "baseline": baseline, "guided": baseline}
