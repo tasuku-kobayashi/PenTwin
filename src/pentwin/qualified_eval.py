@@ -21,8 +21,9 @@ from collections import defaultdict
 
 # Operational permission to *explore* a matching axis, not an estimate of
 # out-of-sample attribution or a threshold on generated-text quality.
-MIN_CORRECT = 4
-MIN_EACH_AUTHOR = 1
+PAPERS_PER_AUTHOR = 5
+MIN_CORRECT = 7
+MIN_EACH_AUTHOR = 3
 
 
 def _digests(manifest: Path) -> set[str]:
@@ -32,6 +33,10 @@ def _digests(manifest: Path) -> set[str]:
 
 
 def qualify_evaluators(first: Path, second: Path) -> dict:
+    for manifest in (first, second):
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not isinstance(payload.get("papers"), list) or len(payload["papers"]) != 2 * PAPERS_PER_AUTHOR:
+            raise CorpusError("The 7/10 evaluator gate requires ten human papers per cohort, five per author")
     if first.resolve() == second.resolve() or _digests(first) & _digests(second):
         raise CorpusError("Calibration cohorts must not reuse a paper")
     a, b = calibrate(first), calibrate(second)
@@ -39,24 +44,44 @@ def qualify_evaluators(first: Path, second: Path) -> dict:
     for axis in AXIS_METRICS:
         counts = [report["per_author"][axis] for report in (a, b)]
         qualified = all(sum(item["correct"] for item in cohort.values()) >= MIN_CORRECT and
-                        all(item["correct"] >= MIN_EACH_AUTHOR and item["available"] == 3
+                        all(item["correct"] >= MIN_EACH_AUTHOR and item["available"] == PAPERS_PER_AUTHOR
                             for item in cohort.values()) for cohort in counts)
+        content_counts = [report["per_author"]["content_jaccard"] for report in (a, b)] if axis == "lexical" else None
+        if content_counts is not None:
+            qualified = qualified and all(sum(item["correct"] for item in cohort.values()) >= MIN_CORRECT and
+                                          all(item["correct"] >= MIN_EACH_AUTHOR and item["available"] == PAPERS_PER_AUTHOR
+                                              for item in cohort.values()) for cohort in content_counts)
         axes[axis] = {"metric": AXIS_METRICS[axis],
                       "correct": [sum(item["correct"] for item in cohort.values()) for cohort in counts],
                       "available": [sum(item["available"] for item in cohort.values()) for cohort in counts],
                       "per_author": [[item["correct"] for item in sorted(cohort.values(), key=lambda x: x["correct"])]
                                      for cohort in counts],
-                      "writer_imbalance": [sorted(item["correct"] for item in cohort.values()) == [1, 3]
+                      "writer_imbalance": [max(item["correct"] for item in cohort.values()) -
+                                           min(item["correct"] for item in cohort.values()) >= 3
                                            for cohort in counts],
+                      "content_jaccard_correct": ([sum(item["correct"] for item in cohort.values())
+                                                   for cohort in content_counts] if content_counts else None),
                       "eligible_for_exploratory_scoring": qualified}
     eligible = [axis for axis, item in axes.items() if item["eligible_for_exploratory_scoring"]]
+    journal = []
+    for report in (a, b):
+        control = report["journal_only_control"]
+        journal.append(None if control is None else {
+            "correct": sum(item["correct"] for item in control.values()),
+            "available": sum(item["available"] for item in control.values()),
+            "per_author": sorted(item["correct"] for item in control.values())})
+    lexical_confounded = any(control is not None and control["available"] >= 2 * PAPERS_PER_AUTHOR - 1 and
+                             control["correct"] >= axes["lexical"]["correct"][i]
+                             for i, control in enumerate(journal))
     return {"status": "exploratory_eligible" if len(eligible) == len(axes) else
             "partial_exploratory_eligible" if eligible else "ineligible",
-            "threshold": {"per_cohort": "at least 4/6", "per_author": "at least 1/3", "cohorts_required": 2},
+            "threshold": {"per_cohort": "at least 7/10", "per_author": "at least 3/5", "cohorts_required": 2},
             "axes": axes, "matrix": AXIS_METRICS,
             "risks": [a["confounds"], b["confounds"]],
+            "journal_only_control": journal,
+            "lexical_journal_confound_warning": lexical_confounded,
             "domain_diagnostics": [a["domain_diagnostics"], b["domain_diagnostics"]],
-            "interpretation": "Each style axis is judged only by its matching metric. All six human papers per cohort must be measurable. Four of six is a weak operational exploration gate (a fair two-choice guess reaches at least four in 22/64 independent trials); 1/3 plus 3/3 is flagged as writer imbalance. Previously inspected cohorts do not establish external validity. Failed axes abstain from generation acceptance."}
+            "interpretation": "Each style axis is judged only by its matching metric; lexical needs both the fixed generation-card vocabulary and raw content overlap to pass. The journal-only comparator reports correct among available decisions; ties abstain. A journal control matching lexical discrimination flags confounding but cannot prove its cause. All ten human papers per cohort must be measurable. Seven of ten is an operational exploration gate, not a validated accuracy estimate; five-plus-two writer splits fail the 3/5 per-writer requirement. A fair two-choice guess reaches at least seven in 176/1024 independent trials, but overlapping leave-one-out cases are not independent. Previously inspected cohorts do not establish external validity. Failed axes abstain from generation acceptance."}
 
 
 def _required_variants(eligible_axes: list[str]) -> set[str]:
@@ -79,7 +104,7 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
     papers = json.loads(first.read_text(encoding="utf-8"))["papers"]
     groups = defaultdict(list)
     for paper in papers:
-        if len(groups[paper["author_id"]]) >= 2:
+        if len(groups[paper["author_id"]]) >= PAPERS_PER_AUTHOR - 1:
             continue
         body = (first.parent / paper["path"]).resolve().read_text(encoding="utf-8")
         selected = []

@@ -21,36 +21,45 @@ class FixedEncoder:
 
 
 class ProtocolTests(unittest.TestCase):
-    def test_four_of_six_is_an_axis_specific_exploration_gate(self):
+    def test_seven_of_ten_is_an_axis_specific_and_writer_balanced_gate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifests = []
             for cohort in ("one", "two"):
                 folder = root / cohort
                 folder.mkdir()
-                (folder / "paper.txt").write_text(cohort)
+                papers = []
+                for i in range(10):
+                    (folder / f"paper{i}.txt").write_text(cohort + str(i))
+                    papers.append({"path": f"paper{i}.txt"})
                 manifest = folder / "manifest.json"
-                manifest.write_text(json.dumps({"papers": [{"path": "paper.txt"}]}))
+                manifest.write_text(json.dumps({"papers": papers}))
                 manifests.append(manifest)
-            def counts(a, b, available=3):
+            def counts(a, b, available=5):
                 return {"A": {"correct": a, "available": available},
                         "B": {"correct": b, "available": available}}
             def report(lexical, ending, order):
                 return {"per_author": {"lexical": counts(*lexical),
+                                       "content_jaccard": counts(*lexical),
                                        "ending": counts(*ending),
                                        "order": counts(*order, available=0)},
-                        "confounds": [], "domain_diagnostics": {}}
+                        "confounds": [], "domain_diagnostics": {}, "journal_only_control": None}
             with patch("pentwin.qualified_eval.calibrate", side_effect=[
-                    report((1, 3), (2, 3), (0, 0)),
-                    report((2, 2), (1, 3), (0, 0))]):
+                    report((3, 4), (2, 5), (0, 0)),
+                    report((4, 3), (3, 4), (0, 0))]):
                 gate = qualify_evaluators(*manifests)
-            self.assertEqual(gate["threshold"]["per_cohort"], "at least 4/6")
+            self.assertEqual(gate["threshold"]["per_cohort"], "at least 7/10")
+            self.assertEqual(gate["threshold"]["per_author"], "at least 3/5")
             self.assertEqual(gate["status"], "partial_exploratory_eligible")
             self.assertTrue(gate["axes"]["lexical"]["eligible_for_exploratory_scoring"])
-            self.assertTrue(gate["axes"]["ending"]["eligible_for_exploratory_scoring"])
+            self.assertFalse(gate["axes"]["ending"]["eligible_for_exploratory_scoring"])
             self.assertFalse(gate["axes"]["order"]["eligible_for_exploratory_scoring"])
-            self.assertEqual(gate["axes"]["lexical"]["writer_imbalance"], [True, False])
+            self.assertEqual(gate["axes"]["ending"]["writer_imbalance"], [True, False])
             self.assertEqual(gate["axes"]["order"]["available"], [0, 0])
+            old = root / "old.json"
+            old.write_text(json.dumps({"papers": [{}] * 6}))
+            with self.assertRaisesRegex(CorpusError, "ten human papers"):
+                qualify_evaluators(old, manifests[1])
 
     def test_axis_matrix_requires_200_measurable_words(self):
         sentence = "However, we suggest the synthetic molecular assay indicates a limited effect here. "
@@ -95,14 +104,15 @@ class ProtocolTests(unittest.TestCase):
                 folder.mkdir()
                 papers = []
                 for author in "AB":
-                    for index in range(3):
+                    for index in range(5):
                         name = f"{author}{index}"
                         phrase = ("We could suggest a pattern in these artificial observations. "
                                   if author == "A" else
                                   "The artificial observations demonstrate a clear pattern here. ")
                         (folder / f"{name}.txt").write_text((phrase * 30) + cohort + name)
                         papers.append({"author_id": author, "paper_id": name,
-                                       "stratum": "synthetic", "path": f"{name}.txt"})
+                                       "stratum": "synthetic", "path": f"{name}.txt",
+                                       "journal": "journal-" + author})
                 manifest = folder / "manifest.json"
                 manifest.write_text(json.dumps({"papers": papers}))
                 manifests.append(manifest)
@@ -110,6 +120,8 @@ class ProtocolTests(unittest.TestCase):
                 qualify_evaluators(manifests[0], manifests[0])
             gate = qualify_evaluators(*manifests)
             self.assertEqual(set(gate["matrix"]), {"lexical", "ending", "order"})
+            self.assertEqual([control["correct"] for control in gate["journal_only_control"]], [10, 10])
+            self.assertTrue(gate["lexical_journal_confound_warning"])
             cases = []
             baseline = "The synthetic assay produced artificial observations in this sample. " * 24
             for content in ("c1", "c2"):
