@@ -9,6 +9,7 @@ from mcp.server import MCPServer
 
 from pentwin.cli import CorpusError, sha256
 from pentwin.style_engine import aggregate, assess, guidance
+from pentwin.style_card import build_style_card
 
 
 def load_corpus(run: Path) -> list[dict]:
@@ -39,7 +40,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.7.0", instructions="For authorial style, call rewrite_plan and then assess_revision on the exact proposed draft. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.8.0", instructions="For authorial style, inspect author_style_card, call rewrite_plan and then assess_revision on the exact proposed draft. Unsupported role preferences must be omitted. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -62,6 +63,11 @@ def build_server(run: Path) -> MCPServer:
                                   if not key.startswith("function:")}
             profile["diagnostic_features_excluded_from_mcp"] = ["function_word_rates"]
         return profile
+
+    @server.tool()
+    def author_style_card(section: str, move: str = "") -> dict:
+        """Return supported role-conditioned wording, stance and move transitions; never return original passages."""
+        return build_style_card(load_corpus(run), section, move)
 
     @server.tool()
     def rewrite_plan(draft: str, section: str, move: str = "") -> dict:

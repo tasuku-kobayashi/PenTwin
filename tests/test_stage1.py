@@ -62,6 +62,21 @@ class StageOneTests(unittest.TestCase):
         with self.assertRaises(CorpusError):
             seal(self.out)
 
+    def test_review_sheet_reordering_cannot_change_corpus_sequence(self):
+        doc = Document(self.root / "p0.docx")
+        doc.add_paragraph("A second artificial paragraph describes the observed biological response here.")
+        doc.save(self.root / "p0.docx")
+        prepare(self.manifest, self.out, "fixed")
+        rows = self._rows()
+        expected = [row["candidate_id"] for row in rows]
+        for row in rows:
+            row.update(include="yes", source_verified="yes", section="introduction", move="background")
+        self._write_rows(list(reversed(rows)))
+        seal(self.out)
+        actual = [json.loads(line)["candidate_id"] for line in
+                  (self.out / "corpus.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(actual, expected)
+
     def test_rejects_modified_extracted_text_and_missing_row(self):
         prepare(self.manifest, self.out, "fixed")
         rows = self._rows()

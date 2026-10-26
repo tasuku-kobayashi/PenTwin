@@ -75,7 +75,7 @@ class MCPTests(unittest.TestCase):
                                            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
             async with Client(server) as client:
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "rewrite_plan", "assess_revision"})
+                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "rewrite_plan", "assess_revision"})
                 status = await client.call_tool("corpus_status", {})
                 self.assertFalse(status.is_error)
                 self.assertTrue(json.loads(status.content[0].text)["sealed"])
@@ -87,6 +87,9 @@ class MCPTests(unittest.TestCase):
                 held = [r["text"] for r in load_corpus(self.run) if r["split"] == "holdout"]
                 self.assertTrue(all(t not in json.dumps(response) for t in held))
                 self.assertTrue(all(r["text"] not in json.dumps(response) for r in load_corpus(self.run)))
+                card = await client.call_tool("author_style_card", {"section": "introduction"})
+                self.assertFalse(card.is_error)
+                self.assertNotIn("synthetic pathway", json.dumps(json.loads(card.content[0].text)))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
                                                                "section": "introduction"})
                 self.assertFalse(plan.is_error)

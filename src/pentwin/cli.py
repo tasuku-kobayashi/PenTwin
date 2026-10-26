@@ -295,6 +295,10 @@ def seal(out: Path) -> dict:
                         | {"model_excerpt_permission": paper["model_excerpt_permission"], "status": paper["status"]})
     if seen != set(candidates):
         raise CorpusError("Review rows were removed; review every candidate explicitly")
+    # The review sheet may be reordered; discourse transitions must use the
+    # extraction order frozen in candidates.lock.json.
+    original_position = {candidate_id: index for index, candidate_id in enumerate(candidates)}
+    accepted.sort(key=lambda row: original_position[row["candidate_id"]])
     dev_families = {r["family_id"] for r in accepted if r["split"] == "development"}
     test_families = {r["family_id"] for r in accepted if r["split"] == "holdout"}
     if len(dev_families) < 2 or len(test_families) < 1:
@@ -332,6 +336,11 @@ def main(argv: list[str] | None = None) -> int:
     automatic = sub.add_parser("auto-eval", help="Private same-content generated style proxy; no human ratings")
     automatic.add_argument("manifest", type=Path)
     automatic.add_argument("cases", type=Path)
+    contrast = sub.add_parser("contrast-card", help="Contrast two sealed, reviewed author corpora without disclosing text")
+    contrast.add_argument("target_run", type=Path)
+    contrast.add_argument("rival_run", type=Path)
+    contrast.add_argument("--section", required=True)
+    contrast.add_argument("--move", default="")
     args = parser.parse_args(argv)
     try:
         if args.command == "serve":
@@ -347,6 +356,14 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "auto-eval":
             from pentwin.automatic_eval import evaluate_generations
             result = evaluate_generations(args.manifest, args.cases)
+        elif args.command == "contrast-card":
+            from pentwin.server import load_corpus
+            from pentwin.style_card import build_style_card, contrast_style_cards
+            target, rival = load_corpus(args.target_run), load_corpus(args.rival_run)
+            if {row["source_sha256"] for row in target} & {row["source_sha256"] for row in rival}:
+                raise CorpusError("The two author corpora share a source file")
+            result = contrast_style_cards(build_style_card(target, args.section, args.move),
+                                          build_style_card(rival, args.section, args.move))
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
