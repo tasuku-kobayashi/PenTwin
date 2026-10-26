@@ -138,6 +138,13 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
         return {"status": "insufficient_draft", "reason": "The draft needs at least one complete sentence."}
     differences = _distance(actual, target["target"])
     directions = []
+    stable = {}
+    for key, limit in (("sentence_words", 8), ("paragraph_sentences", 0.7),
+                       ("hedge_rate", 0.15), ("first_person_rate", 0.15),
+                       ("passive_rate", 0.15), ("rhetoric:contrast", 0.15),
+                       ("rhetoric:reason", 0.15), ("rhetoric:limitation", 0.15)):
+        if target["between_paper_range"].get(key, float("inf")) <= limit:
+            stable[key] = target["target"][key]
     descriptors = {
         "sentence_words": ("shorten sentence structure", "lengthen sentence structure where clarity permits"),
         "paragraph_sentences": ("use fewer sentences per paragraph", "connect related sentences into fuller paragraphs"),
@@ -154,11 +161,20 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
     for key in sorted(descriptors, key=lambda name: -differences.get(name, 0)):
         if differences.get(key, 0) < 0.22:
             continue
-        spread = target["between_paper_range"].get(key, 0)
-        if spread > (8 if key == "sentence_words" else 0.7):
+        if key not in stable and key in ("sentence_words", "paragraph_sentences", "hedge_rate",
+                                          "first_person_rate", "passive_rate", "rhetoric:contrast",
+                                          "rhetoric:reason", "rhetoric:limitation"):
             continue  # Papers disagree; no author-wide target is defensible.
         direction = 0 if actual[key] > target["target"][key] else 1
-        directions.append(descriptors[key][direction])
+        label = descriptors[key][direction]
+        if key in stable:
+            value = stable[key]
+            if key in ("sentence_words", "paragraph_sentences"):
+                unit = "words per sentence" if key == "sentence_words" else "sentences per paragraph"
+                label += f" (author median about {value:g} {unit}; draft {actual[key]:.1f})"
+            else:
+                label += f" (author rate about {value * 100:.0f}% of sentences; draft {actual[key] * 100:.0f}%)"
+        directions.append(label)
         if len(directions) >= 4:
             break
     return {"status": "rewrite_guidance", "section": section, "move": move,
@@ -168,10 +184,12 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
             "draft_measurements": {k: round(actual[k], 3) for k in target["target"] if not k.startswith("function:")},
             "diagnostic_features_excluded_from_rewrite": ["function_word_rates"],
             "prioritized_edits": directions,
+            "stable_style_signature": stable,
             "wording_preferences": {"connectors": target["common_connectors"],
                                     "stance_verbs": target["common_stance_verbs"]},
             "rewrite_contract": [
                 "Rewrite the user's English draft toward the supplied author-style tendencies, focusing on rhythm, wording, stance and argument flow.",
+                "Use the numeric tendencies in prioritized_edits as soft targets, never as a sentence-by-sentence quota; skip an instruction if it does not fit this passage.",
                 "Avoid generic academic polish that erases distinctive habits. Do not quote or imitate any source passage verbatim.",
                 "Treat style guidance as suggestions; this tool does not evaluate scientific claims or preserve their meaning.",
                 "After writing, call assess_revision with the exact original and proposed text to inspect style movement; do not call its score author likeness.",
@@ -197,9 +215,13 @@ def assess(rows: list[dict], original: str, revised: str, section: str, move: st
     # Diagnostic only: no optimizing or claiming success based on this aggregate.
     style = {"before": round(sum(before[k] for k in selected) / len(selected), 3),
              "after": round(sum(after[k] for k in selected) / len(selected), 3)}
+    short_keys = tuple(key for key in selected if key != "paragraph_sentences")
+    short_style = {"before": round(sum(before[k] for k in short_keys) / len(short_keys), 3),
+                   "after": round(sum(after[k] for k in short_keys) / len(short_keys), 3)}
     return {"status": "style_diagnostic_only", "profile_digest": profile["profile_digest"],
             "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
             "revision_sha256": hashlib.sha256(revised.encode()).hexdigest(),
             "style_distance_diagnostic": style,
+            "short_passage_style_distance_diagnostic": short_style,
             "scope": "Measures the selected style features only; scientific content is outside PenTwin.",
-            "limitations": "A lower distance is not proof that a reader recognizes the author. Compare blinded outputs with other authors and generic academic writing."}
+            "limitations": "Whole-paper paragraph length can dominate a short draft. The short-passage diagnostic excludes that feature. Both distances reuse guidance features and neither proves that a reader recognizes the author."}
