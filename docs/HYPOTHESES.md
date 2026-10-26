@@ -2,6 +2,8 @@
 
 The product objective is a more author-like **generated English life-sciences passage** with unchanged scientific meaning. Identifying the author of an existing article is a useful intermediate check, not the objective itself. The six-article exploratory corpus has already influenced design decisions and must not be used for an independent release claim. No participant identity, source passage, or private corpus belongs in this repository.
 
+Before further implementation or validation, use the claim ladder, confound analysis and prospective decision rules in [the theory record](THEORY_BEFORE_VALIDATION.md). The 5/6 same-column result is an exploration signal, not a product threshold.
+
 | Hypothesis | Current evidence | Next discriminating experiment | Current confidence |
 | --- | --- | --- | --- |
 | H1: seven surface features omit useful author signals | First inspected cohort: seven features 4/6, function words 6/6. Second cohort: seven features 6/6, function words 4/6. Third cohort in the same journal column: seven features 5/6, function words 3/6, length-only 5/6. The apparent feature gain did not replicate over length. | Test in matched-genre research manuscripts, with pre-frozen features and whole-paper holdouts. | Function-word-only hypothesis weakened; author-specific signal unproven. |
