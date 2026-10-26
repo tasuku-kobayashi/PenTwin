@@ -341,6 +341,9 @@ def main(argv: list[str] | None = None) -> int:
     contrast.add_argument("rival_run", type=Path)
     contrast.add_argument("--section", required=True)
     contrast.add_argument("--move", default="")
+    heldout = sub.add_parser("heldout-axes", help="Exploratory weak-axis comparison against whole held-out papers")
+    heldout.add_argument("manifest", type=Path)
+    heldout.add_argument("cases", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "serve":
@@ -364,6 +367,9 @@ def main(argv: list[str] | None = None) -> int:
                 raise CorpusError("The two author corpora share a source file")
             result = contrast_style_cards(build_style_card(target, args.section, args.move),
                                           build_style_card(rival, args.section, args.move))
+        elif args.command == "heldout-axes":
+            from pentwin.heldout_eval import evaluate_heldout_axes
+            result = evaluate_heldout_axes(args.manifest, args.cases)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
