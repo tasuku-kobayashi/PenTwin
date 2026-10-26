@@ -2,6 +2,8 @@
 
 **Current research basis:** [Wang et al. (2025) and its directly cited work](docs/PAPER_GROUNDED_LOGIC.md). The new `paper-eval` command calibrates independent short-passage diagnostics on held-out human papers before it interprets matched generated drafts. The initial private pilot identifies 5/6 human windows on each metric but improves only 3/6 guided drafts on each, with opposite writers benefiting. This is exploratory evidence of a remaining generation gap, not author likeness. Earlier style cards and proxy results remain historical aids.
 
+The MCP `generation_protocol(section)` tool provides comparable generic, card-guided and card-plus-critique conditions without returning paper excerpts. It prepares an experiment; it does not run the host model or establish that any condition works.
+
 PenTwin is an English life sciences author-style project. It prepares a manually reviewed corpus and serves style observations through a read-only local MCP server. The host LLM writes prose; PenTwin does not generate prose, call an LLM, publish a manuscript, or certify authorship or author likeness. Scientific meaning and citation checks are outside this project and belong to an independent service. **The three-paper minimum is an ingestion threshold, not evidence of reliable style imitation.**
 
 ## Prerequisites
