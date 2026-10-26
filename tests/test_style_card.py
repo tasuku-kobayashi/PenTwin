@@ -2,6 +2,7 @@ import json
 import unittest
 
 from pentwin.style_card import build_style_card, card_instructions, contrast_style_cards
+from pentwin.exploratory_card import build_exploratory_card, exploratory_instructions
 from pentwin.style_engine import guidance
 
 
@@ -59,6 +60,18 @@ class StyleCardTests(unittest.TestCase):
         self.assertEqual(build_style_card(only_one, "discussion")["status"], "insufficient_role_evidence")
         self.assertEqual(build_style_card(self.rows, "discussion", "limitation")["roles"], {})
         self.assertEqual(build_style_card(self.rows, "discussion", "finding")["flow"], [])
+
+    def test_weak_clues_keep_one_paper_support_with_low_confidence(self):
+        rows = [dict(row) for row in self.rows]
+        rows[1]["text"] = rows[1]["text"].replace("We suggest", "We propose")
+        weak = build_exploratory_card(rows, "discussion")
+        self.assertEqual(weak["status"], "exploratory")
+        self.assertTrue(any(item["support"] == 1 and item["confidence"] == "low"
+                            for item in weak["wording"]["stance_verbs"]))
+        words = exploratory_instructions(weak, ("wording",))
+        self.assertTrue(words)
+        self.assertTrue(all("cue" not in item for item in words))
+        self.assertEqual(exploratory_instructions(weak, ()), [])
 
     def test_two_writers_get_different_executable_cards_on_same_roles(self):
         rival = []
