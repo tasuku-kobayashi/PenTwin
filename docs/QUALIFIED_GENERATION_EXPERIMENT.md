@@ -1,5 +1,7 @@
 # Qualified generation experiment, 2026-10-26
 
+**Historical protocol:** the seven-sentence screens below were superseded by the [200-word axis-matched protocol](AXIS_MATRIX_AND_OA_VALIDATION.md). Do not use their 5/6 result as current evaluator eligibility.
+
 ## Basis and frozen order
 
 Research basis: [Wang et al. (2025)](https://aclanthology.org/2025.findings-emnlp.532/), plus its direct reference [Bhandarkar et al. (2024)](https://aclanthology.org/2024.personalize-1.6/) for the author-prefix setting. The older card pilot is auxiliary. Gate human text first; then prepare all conditions; then score independent generations and semantics. No prompt or feature is selected from the new generation results.
