@@ -28,12 +28,22 @@ class BlindEvaluationTests(unittest.TestCase):
             self.assertNotIn("guided_at", (run / "rating.csv").read_text())
             for row in rows:
                 row.update(preferred=key[row["case_id"]], likeness_a="3", likeness_b="3",
-                           naturalness_a="4", naturalness_b="4", facts_a="5", facts_b="5")
+                           naturalness_a="4", naturalness_b="4", facts_a="5", facts_b="5",
+                           material_error_a="no", material_error_b="no")
             with (run / "rating.csv").open("w", newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=fields)
                 writer.writeheader()
                 writer.writerows(rows)
-            self.assertEqual(summarize(run)["preference"]["guided"], 2)
+            summary = summarize(run)
+            self.assertEqual(summary["preference"]["guided"], 2)
+            self.assertEqual(summary["paired_dimensions"]["likeness"]["tie"], 2)
+            guided_side = key[rows[0]["case_id"]].lower()
+            rows[0][f"material_error_{guided_side}"] = "yes"
+            with (run / "rating.csv").open("w", newline="") as fh:
+                writer = csv.DictWriter(fh, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(rows)
+            self.assertEqual(summarize(run)["quality_gate"], "blocked")
             rows[0]["facts_a"] = ""
             with (run / "rating.csv").open("w", newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=fields)
