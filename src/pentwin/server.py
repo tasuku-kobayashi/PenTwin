@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -41,7 +42,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.15.0", instructions="Use generation_protocol with lexical_only=true for lexical-only generation and a separate authored target opening for +Snippet. Use offline_evaluate to score private external drafts and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two ten-paper human cohorts; the 7/10 threshold permits exploration only, and failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.16.0", instructions="Use generation_protocol with lexical_only=true for lexical-only generation and a separate authored target opening for +Snippet. Use evaluate_generated_drafts for direct host-generated JSON or offline_evaluate for private external files and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two ten-paper human cohorts; the 7/10 threshold permits exploration only, and failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -114,6 +115,34 @@ def build_server(run: Path) -> MCPServer:
         if any(not p.is_absolute() for p in paths) or (semantic_scores_file and not Path(semantic_scores_file).is_absolute()):
             raise CorpusError("Offline inputs need absolute private paths")
         return evaluate_factorial(*paths, semantic_scores_path=Path(semantic_scores_file) if semantic_scores_file else None)
+
+    @server.tool()
+    def evaluate_generated_drafts(first_manifest: str, second_manifest: str, cases_json: str,
+                                  semantic_scores_json: str = "") -> dict:
+        """Evaluate host-generated text through the same private protocol, without a host-side file write."""
+        from pentwin.qualified_eval import evaluate_factorial
+        manifests = [Path(first_manifest), Path(second_manifest)]
+        if any(not p.is_absolute() for p in manifests):
+            raise CorpusError("Calibration manifests need absolute private paths")
+        try:
+            cases = json.loads(cases_json)
+            scores = json.loads(semantic_scores_json) if semantic_scores_json else None
+        except (ValueError, TypeError) as error:
+            raise CorpusError("Generated cases and semantic scores must be JSON objects") from error
+        if not isinstance(cases, dict) or (scores is not None and not isinstance(scores, dict)):
+            raise CorpusError("Generated cases and semantic scores must be JSON objects")
+        with tempfile.TemporaryDirectory(prefix="pentwin-inline-") as directory:
+            path = Path(directory)
+            case_file = path / "cases.json"
+            case_file.write_text(json.dumps(cases), encoding="utf-8")
+            score_file = None
+            if scores is not None:
+                score_file = path / "scores.json"
+                score_file.write_text(json.dumps(scores), encoding="utf-8")
+            result = evaluate_factorial(*manifests, case_file, semantic_scores_path=score_file)
+        result["input_mode"] = "inline_mcp_ephemeral"
+        result["input_retention"] = "Only response hashes remain; preserve generated drafts privately for reproducibility"
+        return result
 
     @server.tool()
     def assess_revision(original: str, revised: str, section: str, move: str = "") -> dict:
