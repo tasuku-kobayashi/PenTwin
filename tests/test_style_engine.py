@@ -41,13 +41,16 @@ class StyleLogicTests(unittest.TestCase):
         draft = "The synthetic response was 12% in the assay. The result demonstrates an effect."
         result = guidance(self.rows, draft, "results")
         self.assertEqual(result["status"], "rewrite_guidance")
-        self.assertIn("use more hedging expressions in the author's typical phrasing", result["prioritized_edits"])
+        self.assertTrue(any("use more hedging expressions in the author's typical phrasing" in edit
+                            for edit in result["prioritized_edits"]))
         self.assertNotIn("PRIVATE", json.dumps(result))
         self.assertEqual(guidance(self.rows, draft, "discussion")["status"], "insufficient_evidence")
         self.assertEqual(guidance(self.rows, draft, "results", "limitation")["status"], "insufficient_evidence")
         self.assertEqual(guidance(self.rows, draft, "results", "finding")["status"], "rewrite_guidance")
         self.assertNotIn("function:the", result["target"])
         self.assertEqual(result["diagnostic_features_excluded_from_rewrite"], ["function_word_rates"])
+        self.assertIn("sentence_words", result["stable_style_signature"])
+        self.assertTrue(any("author median about" in edit for edit in result["prioritized_edits"]))
 
     def test_revision_style_diagnostic_does_not_claim_author_likeness(self):
         original = "The synthetic response was 12% in the assay. The result demonstrates an effect."
@@ -55,6 +58,7 @@ class StyleLogicTests(unittest.TestCase):
         result = assess(self.rows, original, revision, "results")
         self.assertLess(result["style_distance_diagnostic"]["after"], result["style_distance_diagnostic"]["before"])
         self.assertEqual(result["status"], "style_diagnostic_only")
+        self.assertIn("short_passage_style_distance_diagnostic", result)
         self.assertNotIn("lexical_alarms", result)
         self.assertNotIn("protected_spans", guidance(self.rows, original, "results"))
         self.assertIn("independent verifier", guidance(self.rows, original, "results")["scope"])
