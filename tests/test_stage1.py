@@ -131,6 +131,13 @@ class StageOneTests(unittest.TestCase):
         with self.assertRaisesRegex(CorpusError, "authorship"):
             seal(self.out)
 
+    def test_no_excerpt_permission_field_is_needed_for_local_preparation(self):
+        papers = json.loads(self.manifest.read_text())["papers"]
+        for paper in papers:
+            del paper["model_excerpt_permission"]
+        self.manifest.write_text(json.dumps({"papers": papers}))
+        self.assertEqual(prepare(self.manifest, self.out, "fixed")["papers"], 3)
+
     def test_pdf_section_continues_across_pages_and_references_stop(self):
         source = self.root / "multipage.pdf"
         pdf = canvas.Canvas(str(source))

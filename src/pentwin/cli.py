@@ -61,9 +61,10 @@ def load_manifest(path: Path) -> list[dict]:
     for paper in papers:
         if not isinstance(paper, dict):
             raise CorpusError("Every paper must be an object")
-        for key in ("paper_id", "family_id", "file", "authorship", "status", "model_excerpt_permission"):
+        for key in ("paper_id", "family_id", "file", "authorship", "status"):
             if not isinstance(paper.get(key), str) or not paper[key].strip():
                 raise CorpusError(f"Each paper requires a nonempty {key}")
+        paper.setdefault("model_excerpt_permission", "no")
         if paper["paper_id"] in ids:
             raise CorpusError("Duplicate paper_id")
         ids.add(paper["paper_id"])
