@@ -123,7 +123,7 @@ class MCPTests(unittest.TestCase):
                     folder.mkdir()
                     entries = []
                     for author in "AB":
-                        for index in range(3):
+                        for index in range(5):
                             name = f"{author}{index}"
                             body = ("We suggest the artificial molecular pattern may be limited. " if author == "A"
                                     else "The observed synthetic assay demonstrates a direct pattern here. ") * 30
