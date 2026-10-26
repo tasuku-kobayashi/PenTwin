@@ -41,7 +41,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.12.0", instructions="Use generation_protocol for factorial style conditions and a separate authored target opening for +Snippet. Use offline_evaluate to score private external drafts and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two human cohorts; failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.13.0", instructions="Use generation_protocol for factorial style conditions and a separate authored target opening for +Snippet. Use offline_evaluate to score private external drafts and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two human cohorts; the 4/6 threshold permits retrospective exploration only, and failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
