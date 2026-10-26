@@ -103,21 +103,29 @@ def technical_term_coverage(candidate: dict, reviewed_terms: list[str]) -> float
     return round(hits / len(terms), 4)
 
 
+def _passage_window(body: str, skip_sentences: int = 0) -> dict | None:
+    selected = []
+    words = 0
+    for sentence in _sentences(body)[skip_sentences:]:
+        selected.append(sentence)
+        words += len(WORD.findall(sentence))
+        if words >= MIN_WORDS:
+            return measure(" ".join(selected))
+    return None
+
+
 def calibrate(manifest: Path) -> dict:
     audit = diagnose(manifest)
     papers = json.loads(manifest.read_text(encoding="utf-8"))["papers"]
     groups = defaultdict(list)
+    shifted_groups = defaultdict(list)
     for paper in papers:
         body = (manifest.parent / paper["path"]).resolve().read_text(encoding="utf-8")
         # Shared passage selection; subsequent measurement keeps the entire
         # selected sentence so punctuation and cue windows align.
         _window(body)
-        selected = []
-        for sentence in _sentences(body):
-            selected.append(sentence)
-            if sum(len(WORD.findall(s)) for s in selected) >= MIN_WORDS:
-                break
-        groups[paper["author_id"]].append((paper["paper_id"], measure(" ".join(selected))))
+        groups[paper["author_id"]].append((paper["paper_id"], _passage_window(body)))
+        shifted_groups[paper["author_id"]].append(_passage_window(body, 1))
     authors = sorted(groups)
     rows = []
     for author in authors:
@@ -131,6 +139,18 @@ def calibrate(manifest: Path) -> dict:
                                             and row["margins"][axis] > 0 for row in rows),
                               "available": sum(row["author_id"] == author and row["margins"][axis] is not None
                                                for row in rows)} for author in authors} for axis in (*AXIS_METRICS, "content_jaccard")}
+    shifted = {}
+    for author in authors:
+        rival = next(a for a in authors if a != author)
+        correct = available = 0
+        for index, candidate in enumerate(shifted_groups[author]):
+            own = [s for j, s in enumerate(shifted_groups[author]) if j != index and s is not None]
+            other = [s for j, s in enumerate(shifted_groups[rival]) if j != index and s is not None]
+            if candidate is None or len(own) < 2 or len(other) < 2:
+                continue
+            available += 1
+            correct += margins(candidate, profile(own), profile(other))["lexical"] > 0
+        shifted[author] = {"correct": correct, "available": available}
     domain = {author: {key: round(sum(sample[key] for _, sample in groups[author]) / len(groups[author]), 3)
                        for key in ("passive_rate", "formulaic_rate")}
               for author in authors}
@@ -151,6 +171,7 @@ def calibrate(manifest: Path) -> dict:
                     correct += own > other
             journal_only[author] = {"correct": correct, "available": available}
     return {"metrics": AXIS_METRICS, "per_author": totals, "cases": rows,
+            "lexical_skip_first_sentence": shifted,
             "domain_diagnostics": domain,
             "journal_only_control": journal_only,
             "confounds": audit["confounds"]["reported_risks"],
