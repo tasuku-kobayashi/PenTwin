@@ -39,7 +39,7 @@ The process reads JSON-RPC from stdin and writes MCP responses to stdout. Config
 
 `rewrite_plan(draft, section)` compares the user's draft with those aggregate targets. It returns up to four prioritized edits, section-specific targets when supported by at least two papers, an all-section fallback otherwise, and a meaning-preservation contract for the host LLM. It does **not** train a model or return paper passages. The LLM in ChatGPT or Claude writes the revised text using this plan. `assess_revision(original, revised, section)` then measures whether the diagnostic style distance moved, reports exact text hashes, and flags numeric tokens, negation, uncertainty, and changed citation tokens for human review. The distance is not an author-likeness score and equal token counts cannot prove meaning is preserved. MCP cannot force a model to call either tool or prevent changes after assessment.
 
-`corpus_status` reports anonymous counts. Unpublished papers can be ingested and locally measured, but their text is never returned by this server. `review_draft` flags changed numeric tokens between a supplied fact sheet and draft; it cannot detect all altered claims. See [style logic and validation](docs/STYLE_ENGINE.md).
+`corpus_status` reports anonymous counts. Unpublished papers can be ingested and locally measured, but their text is never returned by this server. `review_draft` flags changed numeric tokens between a supplied fact sheet and draft; it cannot detect all altered claims. See [style logic and validation](docs/STYLE_ENGINE.md) and [hypothesis tests](docs/HYPOTHESES.md). Function-word recognition improved on an already inspected tiny sample; generated author likeness is still unvalidated.
 
 **Current evidence:** an independent-author pilot matched 4 of 6 withheld essays, the same count as a sentence/paragraph-length comparator. It does not support a claim of author-specific resemblance. Details and limitations are in the style logic document.
 
@@ -55,7 +55,7 @@ Use the same fact sheet to create baseline and PenTwin-guided drafts separately 
 python -m pentwin.cli blind C:\private\pentwin\cases.json C:\private\pentwin\blind-001 --seed secret-experiment-seed
 ```
 
-Give `rating.csv` to the author without `private_key.json`. For each row, fill `preferred` with `A`, `B`, or `tie` and rate `likeness_a/b`, `naturalness_a/b`, and `facts_a/b` from 1 to 5; enter comments. Keep the key separate until ratings are complete. Run `python -m pentwin.cli ratings C:\private\pentwin\blind-001` to count preferences by GPT and Claude. Collect independent content checks and multiple papers/sections; this descriptive count alone does not establish reliable author style. Do not inspect or use holdout text for prompt design, debugging, or tuning. See [evaluation protocol](docs/EVALUATION.md).
+Give `rating.csv` to the author without `private_key.json`. For each row, fill `preferred` with `A`, `B`, or `tie` and rate `likeness_a/b`, `naturalness_a/b`, and `facts_a/b` from 1 to 5. A qualified reviewer marks `material_error_a/b` as `yes`, `no`, or `uncertain`; enter comments. Keep the key separate until ratings are complete. Run `python -m pentwin.cli ratings C:\private\pentwin\blind-001` to see paired preferences and each rating dimension by GPT and Claude. Collect independent content checks and multiple papers/sections; this descriptive count alone does not establish reliable author style. Do not inspect or use holdout text for prompt design, debugging, or tuning. See [evaluation protocol](docs/EVALUATION.md).
 
 ### Labels
 
