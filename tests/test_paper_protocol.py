@@ -31,7 +31,7 @@ class ProtocolTests(unittest.TestCase):
                 papers = []
                 for i in range(10):
                     (folder / f"paper{i}.txt").write_text(cohort + str(i))
-                    papers.append({"path": f"paper{i}.txt"})
+                    papers.append({"path": f"paper{i}.txt", "author_id": ("AB" if cohort == "one" else "CD")[i // 5]})
                 manifest = folder / "manifest.json"
                 manifest.write_text(json.dumps({"papers": papers}))
                 manifests.append(manifest)
@@ -43,8 +43,9 @@ class ProtocolTests(unittest.TestCase):
                                        "content_jaccard": counts(*lexical),
                                        "ending": counts(*ending),
                                        "order": counts(*order, available=0)},
-                        "confounds": [], "domain_diagnostics": {}, "journal_only_control": None}
-            with patch("pentwin.qualified_eval.calibrate", side_effect=[
+                        "confounds": [], "domain_diagnostics": {}, "journal_only_control": None,
+                        "lexical_skip_first_sentence": counts(*lexical)}
+            with patch("pentwin.qualified_eval._shared_journal_diagnostic", return_value={}), patch("pentwin.qualified_eval.calibrate", side_effect=[
                     report((3, 4), (2, 5), (0, 0)),
                     report((4, 3), (3, 4), (0, 0))]):
                 gate = qualify_evaluators(*manifests)
@@ -56,6 +57,9 @@ class ProtocolTests(unittest.TestCase):
             self.assertFalse(gate["axes"]["order"]["eligible_for_exploratory_scoring"])
             self.assertEqual(gate["axes"]["ending"]["writer_imbalance"], [True, False])
             self.assertEqual(gate["axes"]["order"]["available"], [0, 0])
+            self.assertEqual(gate["lexical_skip_first_sentence"],
+                             [{"correct": 7, "available": 10}, {"correct": 7, "available": 10}])
+            self.assertFalse(gate["lexical_opening_sensitivity_warning"])
             old = root / "old.json"
             old.write_text(json.dumps({"papers": [{}] * 6}))
             with self.assertRaisesRegex(CorpusError, "ten human papers"):
@@ -92,6 +96,15 @@ class ProtocolTests(unittest.TestCase):
         out = conditions(rows, "discussion", target_text=target, confirmed_author_written=True)
         self.assertEqual(len(out["conditions"]), 9)
         self.assertNotIn(target, json.dumps(out))
+        lexical = conditions(rows, "discussion", target_text=target,
+                             confirmed_author_written=True, lexical_only=True)
+        self.assertEqual(lexical["condition_set"], "lexical_only")
+        self.assertEqual(set(lexical["conditions"]), {"none", "lexical", "lexical_snippet"})
+        self.assertEqual(lexical["conditions"]["lexical_snippet"]["anchor_sha256"],
+                         out["conditions"]["all_snippet"]["anchor_sha256"])
+        self.assertEqual(lexical["conditions"]["lexical_snippet"]["instructions"][3:],
+                         lexical["conditions"]["lexical"]["instructions"][1:])
+        self.assertNotIn("explanation order", json.dumps(lexical))
         with self.assertRaisesRegex(CorpusError, "separate"):
             conditions(rows, "discussion", target_text=rows[0]["text"], confirmed_author_written=True)
 
@@ -103,11 +116,11 @@ class ProtocolTests(unittest.TestCase):
                 folder = root / cohort
                 folder.mkdir()
                 papers = []
-                for author in "AB":
+                for author in ("AB" if cohort == "one" else "CD"):
                     for index in range(5):
                         name = f"{author}{index}"
                         phrase = ("We could suggest a pattern in these artificial observations. "
-                                  if author == "A" else
+                                  if author in ("A", "C") else
                                   "The artificial observations demonstrate a clear pattern here. ")
                         (folder / f"{name}.txt").write_text((phrase * 30) + cohort + name)
                         papers.append({"author_id": author, "paper_id": name,
@@ -118,10 +131,18 @@ class ProtocolTests(unittest.TestCase):
                 manifests.append(manifest)
             with self.assertRaisesRegex(CorpusError, "reuse"):
                 qualify_evaluators(manifests[0], manifests[0])
+            second = json.loads(manifests[1].read_text())
+            second["papers"][0]["author_id"] = "A"
+            manifests[1].write_text(json.dumps(second))
+            with self.assertRaisesRegex(CorpusError, "four distinct"):
+                qualify_evaluators(*manifests)
+            second["papers"][0]["author_id"] = "C"
+            manifests[1].write_text(json.dumps(second))
             gate = qualify_evaluators(*manifests)
             self.assertEqual(set(gate["matrix"]), {"lexical", "ending", "order"})
             self.assertEqual([control["correct"] for control in gate["journal_only_control"]], [10, 10])
             self.assertTrue(gate["lexical_journal_confound_warning"])
+            self.assertEqual(len(gate["lexical_skip_first_sentence"]), 2)
             cases = []
             baseline = "The synthetic assay produced artificial observations in this sample. " * 24
             for content in ("c1", "c2"):
@@ -158,11 +179,17 @@ class ProtocolTests(unittest.TestCase):
             for case in reduced:
                 case["variants"] = {label: baseline for label in ("lexical", "ending", "lexical_ending")}
                 case["variants"]["lexical_ending_snippet"] = baseline
-                case["snippet_anchor"] = "A separate human-written opening."
+                case["snippet_anchor"] = "A separate human-written opening belongs to a new target outside both calibration cohorts."
             file.write_text(json.dumps({"cases": reduced}))
             smaller = evaluate_factorial(*manifests, file, IdenticalEncoder())
             self.assertEqual(smaller["condition_set"], "eligible_axes_only")
             self.assertEqual(set(smaller["summary"]), set(reduced[0]["variants"]))
+            calibration_anchor = " ".join((manifests[0].parent / "A0.txt").read_text().split()[:30])
+            for case in reduced:
+                case["snippet_anchor"] = calibration_anchor
+            file.write_text(json.dumps({"cases": reduced}))
+            with self.assertRaisesRegex(CorpusError, "separate from both calibration"):
+                evaluate_factorial(*manifests, file)
             file.write_text(json.dumps({"cases": cases}))
             imported = {"model": "locally-asserted-sbert-v1", "metric": "cosine", "cases": []}
             for case in cases:
@@ -181,9 +208,9 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaisesRegex(CorpusError, "hash mismatch"):
                 evaluate_factorial(*manifests, file, semantic_scores_path=score_file)
             cases[0]["variants"]["all_snippet"] = baseline
-            cases[0]["snippet_anchor"] = baseline
+            cases[0]["snippet_anchor"] = " ".join(baseline.split()[:20])
             cases[1]["variants"]["all_snippet"] = baseline
-            cases[1]["snippet_anchor"] = baseline
+            cases[1]["snippet_anchor"] = " ".join(baseline.split()[:20])
             file.write_text(json.dumps({"cases": cases}))
             with self.assertRaisesRegex(CorpusError, "continuation"):
                 evaluate_factorial(*manifests, file, IdenticalEncoder())

@@ -41,7 +41,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.14.0", instructions="Use generation_protocol for factorial style conditions and a separate authored target opening for +Snippet. Use offline_evaluate to score private external drafts and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two ten-paper human cohorts; the 7/10 threshold permits exploration only, and failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.15.0", instructions="Use generation_protocol with lexical_only=true for lexical-only generation and a separate authored target opening for +Snippet. Use offline_evaluate to score private external drafts and hash-bound semantic scores. Each axis needs its own eligible 200-word evaluator on two ten-paper human cohorts; the 7/10 threshold permits exploration only, and failed axes abstain. Scientific claims and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:
@@ -100,10 +100,10 @@ def build_server(run: Path) -> MCPServer:
 
     @server.tool()
     def generation_protocol(section: str, move: str = "", target_text: str = "",
-                            confirmed_author_written: bool = False) -> dict:
-        """Provide eight factorial conditions; optionally use a separate human target's opening."""
+                            confirmed_author_written: bool = False, lexical_only: bool = False) -> dict:
+        """Provide all factorial conditions or a lexical-only set, optionally with a separate human opening."""
         from pentwin.ablation_protocol import conditions
-        return conditions(load_corpus(run), section, move, target_text, confirmed_author_written)
+        return conditions(load_corpus(run), section, move, target_text, confirmed_author_written, lexical_only)
 
     @server.tool()
     def offline_evaluate(first_manifest: str, second_manifest: str, cases_file: str,

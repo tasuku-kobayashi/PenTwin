@@ -11,12 +11,13 @@ import json
 from pathlib import Path
 
 from pentwin.cli import CorpusError
-from pentwin.axis_metrics import AXIS_METRICS, calibrate, margins, measure, profile, technical_term_coverage
+from pentwin.axis_metrics import AXIS_METRICS, _passage_window, calibrate, margins, measure, profile, technical_term_coverage
 from pentwin.paper_grounded_eval import MIN_WORDS
 from pentwin.style_engine import _sentences, WORD
 from pentwin.semantic_guard import load_semantic_scores, semantic_guard, semantic_guard_from_scores
 from pentwin.ablation_protocol import AXES, CONDITIONS
 from collections import defaultdict
+from itertools import combinations
 
 
 # Operational permission to *explore* a matching axis, not an estimate of
@@ -32,6 +33,35 @@ def _digests(manifest: Path) -> set[str]:
             for row in data}
 
 
+def _shared_journal_diagnostic(first: Path, second: Path) -> dict:
+    """Descriptive paired-paper check; repeated papers never count as fresh trials."""
+    groups = defaultdict(list)
+    for cohort, manifest in enumerate((first, second)):
+        for row in json.loads(manifest.read_text(encoding="utf-8"))["papers"]:
+            sample = _passage_window((manifest.parent / row["path"]).resolve().read_text(encoding="utf-8"))
+            groups[(cohort, row["author_id"])].append((row, sample))
+    matched = correct = content = 0
+    unique = set()
+    for left_id, right_id in combinations(groups, 2):
+        if left_id[1] == right_id[1]:
+            continue
+        for left, left_sample in groups[left_id]:
+            for right, right_sample in groups[right_id]:
+                if not left.get("journal") or left["journal"] != right.get("journal"):
+                    continue
+                left_ref = profile([sample for row, sample in groups[left_id] if row is not left])
+                right_ref = profile([sample for row, sample in groups[right_id] if row is not right])
+                left_margin = margins(left_sample, left_ref, right_ref)
+                right_margin = margins(right_sample, right_ref, left_ref)
+                matched += 1
+                correct += (left_margin["lexical"] > 0) + (right_margin["lexical"] > 0)
+                content += (left_margin["content_jaccard"] > 0) + (right_margin["content_jaccard"] > 0)
+                unique.update(((left_id, left["paper_id"]), (right_id, right["paper_id"])))
+    return {"matched_pairs": matched, "lexical_correct": correct, "content_correct": content,
+            "decisions": matched * 2, "unique_held_papers": len(unique),
+            "interpretation": "Same-journal pairs are a retrospective diagnostic. Papers can appear in multiple pairs; decisions are dependent. Other author, topic, time and coauthor effects remain. Never use this as a 7/10 gate."}
+
+
 def qualify_evaluators(first: Path, second: Path) -> dict:
     for manifest in (first, second):
         payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -39,6 +69,10 @@ def qualify_evaluators(first: Path, second: Path) -> dict:
             raise CorpusError("The 7/10 evaluator gate requires ten human papers per cohort, five per author")
     if first.resolve() == second.resolve() or _digests(first) & _digests(second):
         raise CorpusError("Calibration cohorts must not reuse a paper")
+    writer_ids = [{p["author_id"] for p in json.loads(manifest.read_text(encoding="utf-8"))["papers"]}
+                  for manifest in (first, second)]
+    if writer_ids[0] & writer_ids[1]:
+        raise CorpusError("Calibration cohorts need four distinct anonymous writer IDs")
     a, b = calibrate(first), calibrate(second)
     axes = {}
     for axis in AXIS_METRICS:
@@ -73,6 +107,10 @@ def qualify_evaluators(first: Path, second: Path) -> dict:
     lexical_confounded = any(control is not None and control["available"] >= 2 * PAPERS_PER_AUTHOR - 1 and
                              control["correct"] >= axes["lexical"]["correct"][i]
                              for i, control in enumerate(journal))
+    shifted = [report["lexical_skip_first_sentence"] for report in (a, b)]
+    shifted_totals = [{"correct": sum(item["correct"] for item in cohort.values()),
+                       "available": sum(item["available"] for item in cohort.values())}
+                      for cohort in shifted]
     return {"status": "exploratory_eligible" if len(eligible) == len(axes) else
             "partial_exploratory_eligible" if eligible else "ineligible",
             "threshold": {"per_cohort": "at least 7/10", "per_author": "at least 3/5", "cohorts_required": 2},
@@ -80,8 +118,12 @@ def qualify_evaluators(first: Path, second: Path) -> dict:
             "risks": [a["confounds"], b["confounds"]],
             "journal_only_control": journal,
             "lexical_journal_confound_warning": lexical_confounded,
+            "lexical_skip_first_sentence": shifted_totals,
+            "lexical_opening_sensitivity_warning": any(item["available"] < 2 * PAPERS_PER_AUTHOR or
+                                                       item["correct"] < MIN_CORRECT for item in shifted_totals),
+            "shared_journal_diagnostic": _shared_journal_diagnostic(first, second),
             "domain_diagnostics": [a["domain_diagnostics"], b["domain_diagnostics"]],
-            "interpretation": "Each style axis is judged only by its matching metric; lexical needs both the fixed generation-card vocabulary and raw content overlap to pass. The journal-only comparator reports correct among available decisions; ties abstain. A journal control matching lexical discrimination flags confounding but cannot prove its cause. All ten human papers per cohort must be measurable. Seven of ten is an operational exploration gate, not a validated accuracy estimate; five-plus-two writer splits fail the 3/5 per-writer requirement. A fair two-choice guess reaches at least seven in 176/1024 independent trials, but overlapping leave-one-out cases are not independent. Previously inspected cohorts do not establish external validity. Failed axes abstain from generation acceptance."}
+            "interpretation": "Each style axis is judged only by its matching metric; lexical needs both the fixed generation-card vocabulary and raw content overlap to pass. Journal-only and one-sentence-shift controls are retrospective sensitivity diagnostics, not tuned replacements for the frozen 200-word gate. A journal control matching lexical discrimination or a shifted-window failure flags possible confounding. All ten human papers per cohort must be measurable. Seven of ten is an operational exploration gate, not a validated accuracy estimate; five-plus-two writer splits fail the 3/5 per-writer requirement. A fair two-choice guess reaches at least seven in 176/1024 independent trials, but overlapping leave-one-out cases are not independent. Previously inspected cohorts do not establish external validity. Failed axes abstain from generation acceptance."}
 
 
 def _required_variants(eligible_axes: list[str]) -> set[str]:
@@ -101,6 +143,9 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
         raise CorpusError("Private evaluation inputs must remain outside Git working trees")
     imported = load_semantic_scores(semantic_scores_path) if semantic_scores_path else None
     gate = qualify_evaluators(first, second)
+    calibration_texts = [" ".join((manifest.parent / paper["path"]).resolve().read_text(encoding="utf-8").split())
+                         for manifest in (first, second)
+                         for paper in json.loads(manifest.read_text(encoding="utf-8"))["papers"]]
     papers = json.loads(first.read_text(encoding="utf-8"))["papers"]
     groups = defaultdict(list)
     for paper in papers:
@@ -156,6 +201,11 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
             anchor = case.get("snippet_anchor")
             if not isinstance(anchor, str) or not anchor.strip():
                 raise CorpusError("Snippet condition requires its private human-authored anchor")
+            normalized_anchor = " ".join(anchor.split())
+            if not 10 <= len(anchor.split()) <= 50:
+                raise CorpusError("Snippet anchor needs 10 to 50 words from a separate target")
+            if any(normalized_anchor in source for source in calibration_texts):
+                raise CorpusError("Snippet target must be separate from both calibration cohorts")
             if variants[next(iter(snippet))].lstrip().startswith(anchor.strip()):
                 raise CorpusError("Score only the continuation; remove the human-authored anchor")
         if case["author_id"] in paired[case["content_id"]]:
