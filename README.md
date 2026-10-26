@@ -1,5 +1,7 @@
 # PenTwin — reviewed corpus and local MCP pilot
 
+**Current research basis:** [Wang et al. (2025) and its directly cited work](docs/PAPER_GROUNDED_LOGIC.md). The new `paper-eval` command calibrates independent short-passage diagnostics on held-out human papers before it interprets matched generated drafts. The initial private pilot identifies 5/6 human windows on each metric but improves only 3/6 guided drafts on each, with opposite writers benefiting. This is exploratory evidence of a remaining generation gap, not author likeness. Earlier style cards and proxy results remain historical aids.
+
 PenTwin is an English life sciences author-style project. It prepares a manually reviewed corpus and serves style observations through a read-only local MCP server. The host LLM writes prose; PenTwin does not generate prose, call an LLM, publish a manuscript, or certify authorship or author likeness. Scientific meaning and citation checks are outside this project and belong to an independent service. **The three-paper minimum is an ingestion threshold, not evidence of reliable style imitation.**
 
 ## Prerequisites
