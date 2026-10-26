@@ -10,7 +10,8 @@ from docx import Document
 from mcp import Client, StdioServerParameters
 
 from pentwin.cli import CorpusError, prepare, seal
-from pentwin.server import audit_draft, build_server, exemplars, load_corpus, profile
+from pentwin.server import audit_draft, build_server, load_corpus
+from pentwin.style_engine import aggregate
 
 
 class MCPTests(unittest.TestCase):
@@ -44,7 +45,7 @@ class MCPTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_permission_and_holdout_are_absent_from_model_facing_tools(self):
+    def test_permission_no_still_allows_aggregate_but_no_source_text_leaves(self):
         rows = load_corpus(self.run)
         held = [r for r in rows if r["split"] == "holdout"]
         denied = next(r for r in rows if r["split"] == "development")
@@ -54,11 +55,11 @@ class MCPTests(unittest.TestCase):
                 row["model_excerpt_permission"] = "no"
             if row["family_id"] == unpublished["family_id"]:
                 row["status"] = "unpublished"
-        response = json.dumps({"profile": profile(rows), "examples": exemplars(rows, "", 3)})
+        response = json.dumps(aggregate(rows))
         self.assertNotIn(held[0]["text"], response)
         self.assertNotIn(denied["text"], response)
         self.assertNotIn(unpublished["text"], response)
-        self.assertEqual(profile(rows)["status"], "insufficient_evidence")
+        self.assertEqual(aggregate(rows)["status"], "provisional")
 
     def test_tampered_corpus_and_unsealed_run_fail_closed(self):
         (self.run / "corpus.jsonl").write_text("{}\n")
@@ -81,16 +82,20 @@ class MCPTests(unittest.TestCase):
                                            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
             async with Client(server) as client:
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "style_examples", "review_draft"})
+                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "review_draft", "rewrite_plan", "assess_revision"})
                 status = await client.call_tool("corpus_status", {})
                 self.assertFalse(status.is_error)
                 self.assertTrue(json.loads(status.content[0].text)["sealed"])
-                examples = await client.call_tool("style_examples", {"limit": 2})
-                self.assertFalse(examples.is_error)
-                response = json.loads(examples.content[0].text)
-                self.assertEqual(len(response["examples"]), 2)
+                profile = await client.call_tool("style_profile", {})
+                self.assertFalse(profile.is_error)
+                response = json.loads(profile.content[0].text)
+                self.assertEqual(response["status"], "provisional")
                 held = [r["text"] for r in load_corpus(self.run) if r["split"] == "holdout"]
                 self.assertTrue(all(t not in json.dumps(response) for t in held))
+                self.assertTrue(all(r["text"] not in json.dumps(response) for r in load_corpus(self.run)))
+                plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was recorded in the assay.", "section": "introduction"})
+                self.assertFalse(plan.is_error)
+                self.assertEqual(json.loads(plan.content[0].text)["status"], "rewrite_guidance")
         asyncio.run(exercise())
 
 
