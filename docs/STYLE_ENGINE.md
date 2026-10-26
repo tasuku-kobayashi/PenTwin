@@ -1,4 +1,4 @@
-# Local style engine (experimental v0.4)
+# Local style engine (experimental v0.6)
 
 ## What is implemented
 
@@ -6,14 +6,14 @@ The input is a sealed, human-reviewed set of English paragraphs from at least th
 
 For a section, each paper first produces a vector: median sentence words; sentences per paragraph; fractions of sentences with hedges, first-person pronouns, passive-like verbs, citation-like markers, semicolons, parentheses, questions, and fixed-vocabulary contrast/reason/limitation cues; rates of 16 fixed function words; and usage of a small fixed vocabulary of connectors and stance verbs. The component-wise median across independent paper families is the target. A component with large disagreement across papers does not yield a rewrite instruction. Section and optional human-reviewed rhetorical `move` filters each need at least two usable development families; when insufficient, the engine returns `insufficient_evidence` instead of silently substituting an all-section profile. An explicit request for an all-section profile remains possible. Function-word rates remain available for offline diagnostics but are excluded from both MCP `style_profile` and `rewrite_plan` output after the second cohort failed to replicate their original advantage. These fixed lexicons and regexes are only rough proxies; they do not infer argument structure, individual phrasing, rare word choices, or scientific reasoning.
 
-`rewrite_plan` compares those targets with the input draft and orders at most four changes by normalized size. Its contract tells the host LLM to preserve assertions, comparisons, groups, directions, numbers, units, citations, negation and calibrated uncertainty, and to avoid copying source material. `assess_revision` reports a diagnostic difference before and after, text hashes, and lexical alarms. It always returns `needs_human_review`; it never certifies meaning or author likeness. The host application must explicitly invoke the tools, and the final displayed text must be checked against the returned revision hash for the assessment to apply to it.
+`rewrite_plan` compares those targets with a draft and orders at most four suggested changes by normalized difference, omitting features with large disagreement across development papers. Wording preferences require at least two separate paper families to use the same fixed-vocabulary word. The contract asks the host LLM to emphasize rhythm, wording, stance and argument flow without copying source passages. `assess_revision` reports a diagnostic difference and exact text hashes; its status is `style_diagnostic_only`. Scientific meaning and citation verification are outside this component. The host application must invoke these tools explicitly. Neither the distance nor a plausible revision proves human-recognizable author likeness.
 
 ## Verification and limits
 
-- Synthetic tests check that local aggregation works when `model_excerpt_permission=no`, holdout text has no effect, no original passage appears in an MCP response, the rewrite plan responds to engineered stylistic differences, numeric mutations are flagged, and the official SDK can call the tools over stdio.
+- Synthetic tests check that local aggregation works when `model_excerpt_permission=no`, holdout text has no effect, no original passage appears in an MCP response, the rewrite plan responds to engineered stylistic differences, four style-only MCP tools respond, and the official SDK can call them over stdio.
 - The private four-PDF extraction smoke test produced enough provisional all-section candidates for the algorithm to run but too few independently supported candidates in individual sections. The rows have **not** been visually reviewed or confirmed as primarily written by the target author, so these measurements are not a valid style profile and are not served through MCP.
 - Heuristics such as passive-voice detection and sentence splitting can misread scientific notation, abbreviations, tables, and OCR. Family-balanced averages can still track journal and topic differences. A lower diagnostic distance is not proof of human-recognizable authorship.
-- Validate with confirmed writing contributions and blinded, same-content author ratings across sections, alongside independent fact checks. Keep evaluation papers untouched while iterating. See [evaluation protocol](EVALUATION.md).
+- Validate with confirmed writing contributions and blinded, same-content author ratings across sections, using ordinary and generic academic controls. Keep evaluation papers untouched while iterating. See [evaluation protocol](EVALUATION.md).
 
 ## Exploratory two-author diagnostic (2026-10-26)
 

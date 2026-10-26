@@ -10,7 +10,7 @@ from docx import Document
 from mcp import Client, StdioServerParameters
 
 from pentwin.cli import CorpusError, prepare, seal
-from pentwin.server import audit_draft, build_server, load_corpus
+from pentwin.server import build_server, load_corpus
 from pentwin.style_engine import aggregate
 
 
@@ -68,13 +68,6 @@ class MCPTests(unittest.TestCase):
         with self.assertRaises(CorpusError):
             build_server(self.root)
 
-    def test_fact_alarm_flags_changed_number_without_claiming_approval(self):
-        result = audit_draft("The response was 12% in treated samples.", "The response was 21% in treated samples.")
-        self.assertEqual(result["status"], "needs_human_review")
-        self.assertIn("21%", result["new_numeric_tokens"])
-        self.assertIn("12%", result["omitted_numeric_tokens"])
-        self.assertEqual(audit_draft("Treatment did not improve survival.", "Treatment improved survival.")["status"], "needs_human_review")
-
     def test_stdio_sdk_handshake_discovery_and_tool_call(self):
         async def exercise():
             import sys
@@ -82,7 +75,7 @@ class MCPTests(unittest.TestCase):
                                            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
             async with Client(server) as client:
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "review_draft", "rewrite_plan", "assess_revision"})
+                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "rewrite_plan", "assess_revision"})
                 status = await client.call_tool("corpus_status", {})
                 self.assertFalse(status.is_error)
                 self.assertTrue(json.loads(status.content[0].text)["sealed"])
@@ -95,18 +88,18 @@ class MCPTests(unittest.TestCase):
                 self.assertTrue(all(t not in json.dumps(response) for t in held))
                 self.assertTrue(all(r["text"] not in json.dumps(response) for r in load_corpus(self.run)))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
-                                                               "section": "introduction", "protected_spans": ["12.5 mg/mL"]})
+                                                               "section": "introduction"})
                 self.assertFalse(plan.is_error)
                 plan_response = json.loads(plan.content[0].text)
                 self.assertEqual(plan_response["status"], "rewrite_guidance")
                 self.assertFalse(any(k.startswith("function:") for k in plan_response["target"]))
-                self.assertEqual(plan_response["protected_spans"], ["12.5 mg/mL"])
+                self.assertIn("Authorial style only", plan_response["scope"])
                 checked = await client.call_tool("assess_revision", {
                     "original": "The synthetic response was 12.5 mg/mL in the assay.",
                     "revised": "The synthetic response was 15 mg/mL in the assay.",
-                    "section": "introduction", "protected_spans": ["12.5 mg/mL"]})
+                    "section": "introduction"})
                 self.assertFalse(checked.is_error)
-                self.assertEqual(json.loads(checked.content[0].text)["protected_span_changes"][0]["span"], "12.5 mg/mL")
+                self.assertEqual(json.loads(checked.content[0].text)["status"], "style_diagnostic_only")
         asyncio.run(exercise())
 
 

@@ -1,3 +1,5 @@
+> Historical design record. As of 2026-10-26, factual/meaning checks and protected spans are outside PenTwin. See README and docs/EVALUATION.md for the current style-only scope.
+
 # PenTwin 引継ぎドキュメント
 
 > 対象：本プロジェクトを引き継ぐLLM（以下「あなた」）

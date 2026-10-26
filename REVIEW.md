@@ -1,3 +1,5 @@
+> Historical design record. As of 2026-10-26, factual/meaning checks and protected spans are outside PenTwin. See README and docs/EVALUATION.md for the current style-only scope.
+
 # PenTwin 設計の敵対的レビュー（段階0）
 
 作成日: 2026-10-26  
