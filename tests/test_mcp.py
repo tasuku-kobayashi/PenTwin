@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import hashlib
 import json
 import os
 import tempfile
@@ -76,7 +77,7 @@ class MCPTests(unittest.TestCase):
                                            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
             async with Client(server) as client:
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "axis_plan", "generation_protocol", "rewrite_plan", "assess_revision"})
+                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "axis_plan", "generation_protocol", "offline_evaluate", "rewrite_plan", "assess_revision"})
                 status = await client.call_tool("corpus_status", {})
                 self.assertFalse(status.is_error)
                 self.assertTrue(json.loads(status.content[0].text)["sealed"])
@@ -115,6 +116,48 @@ class MCPTests(unittest.TestCase):
                 anchor = json.loads(anchored.content[0].text)["conditions"]["all_snippet"]
                 self.assertEqual(anchor["anchor_words"], min(50, len(target.split()) // 5))
                 self.assertNotIn(target, json.dumps(anchor))
+                from pentwin.ablation_protocol import CONDITIONS
+                manifests = []
+                for cohort in ("c1", "c2"):
+                    folder = self.root / cohort
+                    folder.mkdir()
+                    entries = []
+                    for author in "AB":
+                        for index in range(3):
+                            name = f"{author}{index}"
+                            body = ("We suggest the artificial molecular pattern may be limited. " if author == "A"
+                                    else "The observed synthetic assay demonstrates a direct pattern here. ") * 30
+                            (folder / (name + ".txt")).write_text(body + f" Independent marker {cohort} {name} appears here.")
+                            entries.append({"author_id": author, "paper_id": name, "stratum": "synthetic",
+                                            "path": name + ".txt"})
+                    manifest = folder / "manifest.json"
+                    manifest.write_text(json.dumps({"papers": entries}))
+                    manifests.append(manifest)
+                baseline = "The synthetic assay produced an artificial molecular observation in this sample. " * 22
+                cases, scores = [], []
+                for content in ("one", "two"):
+                    for author in "AB":
+                        case_id = content + author
+                        brief = "The assay found an artificial observation."
+                        variants = {label: baseline for label in CONDITIONS if label != "none"}
+                        cases.append({"case_id": case_id, "author_id": author, "content_id": content,
+                                      "model": "injected-test", "section": "discussion",
+                                      "content_brief": brief, "baseline": baseline, "variants": variants})
+                        scores.append({"case_id": case_id,
+                                       "reference_sha256": hashlib.sha256(brief.encode()).hexdigest(),
+                                       "scores": {label: {"sha256": hashlib.sha256(baseline.encode()).hexdigest(),
+                                                          "similarity": 0.9} for label in ["none", *variants]}})
+                cases_file, scores_file = self.root / "offline-cases.json", self.root / "offline-scores.json"
+                cases_file.write_text(json.dumps({"cases": cases}))
+                scores_file.write_text(json.dumps({"model": "injected-sbert-test", "metric": "cosine", "cases": scores}))
+                offline = await client.call_tool("offline_evaluate", {"first_manifest": str(manifests[0]),
+                    "second_manifest": str(manifests[1]), "cases_file": str(cases_file),
+                    "semantic_scores_file": str(scores_file)})
+                self.assertFalse(offline.is_error)
+                offline_report = json.loads(offline.content[0].text)
+                self.assertEqual(offline_report["cases"], 4)
+                self.assertEqual(offline_report["summary"]["all"]["semantic_pass"], 4)
+                self.assertNotIn("artificial molecular observation", json.dumps(offline_report))
                 self.assertTrue(all("stance" not in instruction or "soft" in instruction
                                     for instruction in stance_payload["instructions"]))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
