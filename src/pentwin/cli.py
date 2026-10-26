@@ -327,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
     blind.add_argument("--seed", required=True)
     report = sub.add_parser("ratings", help="Summarize a completed blinded rating sheet")
     report.add_argument("output", type=Path)
+    diagnostic = sub.add_parser("diagnose", help="Private two-author whole-paper style diagnostic")
+    diagnostic.add_argument("manifest", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "serve":
@@ -336,6 +338,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command in {"blind", "ratings"}:
             from pentwin.evaluation import make_blind_pairs, summarize
             result = make_blind_pairs(args.cases, args.output, args.seed) if args.command == "blind" else summarize(args.output)
+        elif args.command == "diagnose":
+            from pentwin.validation import diagnose
+            result = diagnose(args.manifest)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
