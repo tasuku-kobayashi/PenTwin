@@ -1,6 +1,6 @@
 """Private, reviewed JATS Discussion extractor for open-access life-science pilots.
 
-The user supplies the six article XML files and verifies original drafting.
+The user supplies six legacy or ten current article XML files and verifies original drafting.
 No author name, identifier, or extracted passage is returned in the report.
 """
 
@@ -60,8 +60,8 @@ def build_manifest(private_spec: Path, output: Path) -> dict:
         raise CorpusError("PMC source data and output must stay outside Git working trees")
     payload = json.loads(private_spec.read_text(encoding="utf-8"))
     items = payload.get("papers") if isinstance(payload, dict) else None
-    if not isinstance(items, list) or len(items) != 6 or output.exists():
-        raise CorpusError("Use six private article specifications and a new output directory")
+    if not isinstance(items, list) or len(items) not in (6, 10) or output.exists():
+        raise CorpusError("Use six or ten private article specifications and a new output directory")
     authors, used_ids, used_paper_ids, papers = {}, set(), set(), []
     staging = []
     for item in items:
@@ -72,7 +72,7 @@ def build_manifest(private_spec: Path, output: Path) -> dict:
             raise CorpusError("Paper IDs must be unique safe identifiers")
         used_paper_ids.add(item["paper_id"])
         if not PMC_ID.fullmatch(item["pmcid"]) or item["pmcid"] in used_ids or item.get("primary_drafter_verified") is not True:
-            raise CorpusError("Require six unique PMCIDs and verified original drafting for each assigned author")
+            raise CorpusError("Require unique PMCIDs and verified original drafting for each assigned author")
         used_ids.add(item["pmcid"])
         authors[item["author_id"]] = authors.get(item["author_id"], 0) + 1
         root = ET.parse((private_spec.parent / item["xml"]).resolve()).getroot()
@@ -109,11 +109,12 @@ def build_manifest(private_spec: Path, output: Path) -> dict:
         if isinstance(item.get("topic_id"), str) and item["topic_id"].strip():
             metadata["topic_id"] = item["topic_id"].strip()
         papers.append(metadata)
-    if len(authors) != 2 or sorted(authors.values()) != [3, 3] or len({p["stratum"] for p in papers}) != 1:
-        raise CorpusError("Use two independently verified original drafters, three papers each, in one matched stratum")
+    per_author = len(items) // 2
+    if len(authors) != 2 or sorted(authors.values()) != [per_author, per_author] or len({p["stratum"] for p in papers}) != 1:
+        raise CorpusError(f"Use two independently verified original drafters, {per_author} papers each, in one matched stratum")
     output.mkdir(parents=True)
     for paper_id, text in staging:
         (output / (paper_id + ".txt")).write_text(text, encoding="utf-8")
     (output / "manifest.json").write_text(json.dumps({"papers": papers}, indent=2), encoding="utf-8")
-    return {"status": "private_oa_discussions_prepared", "papers": 6, "authors": 2,
+    return {"status": "private_oa_discussions_prepared", "papers": len(items), "authors": 2,
             "limitations": "Authorship and section review are asserted by the private spec; OA status alone does not verify a unique drafter. Inspect XML paragraph extraction and topic/journal/time matching before interpreting scores."}
