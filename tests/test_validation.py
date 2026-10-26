@@ -28,6 +28,17 @@ class ValidationTests(unittest.TestCase):
             self.assertEqual(len(report["cases"]), 6)
             self.assertEqual(set(report["total_correct"]), {"length", "seven", "rhetoric", "function"})
             self.assertNotIn("synthetic observation", json.dumps(report))
+            self.assertEqual(report["confounds"]["reported_risks"], ["missing_confound_metadata"])
+            self.assertEqual(report["paired_vs_length"]["seven"]["gain_over_length"] -
+                             report["paired_vs_length"]["seven"]["loss_to_length"],
+                             report["increment_over_length"]["seven"])
+            for item in papers:
+                item.update({"publication_month": f"2024-0{int(item['paper_id'][-1]) + (1 if item['author_id'] == 'A' else 5)}",
+                             "topic_id": "same_topic", "journal": "synthetic_journal", "genre": "research",
+                             "section": "discussion", "primary_drafter_verified": True})
+            manifest.write_text(json.dumps({"papers": papers}), encoding="utf-8")
+            self.assertEqual(diagnose(manifest)["confounds"]["reported_risks"],
+                             ["nonoverlapping_author_publication_periods"])
             papers[1]["path"] = papers[0]["path"]
             manifest.write_text(json.dumps({"papers": papers}), encoding="utf-8")
             with self.assertRaisesRegex(CorpusError, "independent"):
