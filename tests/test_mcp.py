@@ -90,12 +90,15 @@ class MCPTests(unittest.TestCase):
                 self.assertFalse(profile.is_error)
                 response = json.loads(profile.content[0].text)
                 self.assertEqual(response["status"], "provisional")
+                self.assertFalse(any(k.startswith("function:") for k in response["target"]))
                 held = [r["text"] for r in load_corpus(self.run) if r["split"] == "holdout"]
                 self.assertTrue(all(t not in json.dumps(response) for t in held))
                 self.assertTrue(all(r["text"] not in json.dumps(response) for r in load_corpus(self.run)))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was recorded in the assay.", "section": "introduction"})
                 self.assertFalse(plan.is_error)
-                self.assertEqual(json.loads(plan.content[0].text)["status"], "rewrite_guidance")
+                plan_response = json.loads(plan.content[0].text)
+                self.assertEqual(plan_response["status"], "rewrite_guidance")
+                self.assertFalse(any(k.startswith("function:") for k in plan_response["target"]))
         asyncio.run(exercise())
 
 

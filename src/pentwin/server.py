@@ -68,7 +68,13 @@ def build_server(run: Path) -> MCPServer:
     @server.tool()
     def style_profile(section: str = "", move: str = "") -> dict:
         """Return locally measured author-style tendencies without returning any source passage, including when excerpt permission is no."""
-        return aggregate(load_corpus(run), section, move)
+        profile = aggregate(load_corpus(run), section, move)
+        if profile["status"] == "provisional":
+            for field in ("target", "between_paper_range"):
+                profile[field] = {key: value for key, value in profile[field].items()
+                                  if not key.startswith("function:")}
+            profile["diagnostic_features_excluded_from_mcp"] = ["function_word_rates"]
+        return profile
 
     @server.tool()
     def rewrite_plan(draft: str, section: str, move: str = "") -> dict:
