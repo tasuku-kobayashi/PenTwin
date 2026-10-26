@@ -20,6 +20,17 @@ PMC_ID = re.compile(r"PMC[0-9]{4,12}$")
 EXCLUDED = {"xref", "table-wrap", "fig", "disp-formula", "fn", "supplementary-material"}
 
 
+def _cc_by_license(license_node: ET.Element) -> bool:
+    """Accept URL or explicit CC BY prose, but never NC/ND/SA variants."""
+    value = str(license_node.attrib) + " " + " ".join(license_node.itertext())
+    normalized = re.sub(r"\s+", " ", value).lower()
+    return ("creativecommons.org/licenses/by/" in normalized or
+            ("creative commons attribution license" in normalized and
+             re.search(r"\bcc\s?by\b", normalized) is not None)) and not re.search(
+                 r"\bcc\s?by\s?[-–]\s?(?:nc|nd|sa)\b|creativecommons\.org/licenses/by-(?:nc|nd|sa)/",
+                 normalized)
+
+
 def fetch_open_access_xml(pmcid: str, destination: Path) -> None:
     """Opt-in download from Europe PMC's OA fullTextXML endpoint."""
     if not PMC_ID.fullmatch(pmcid) or destination.exists() or any(
@@ -65,11 +76,12 @@ def build_manifest(private_spec: Path, output: Path) -> dict:
         used_ids.add(item["pmcid"])
         authors[item["author_id"]] = authors.get(item["author_id"], 0) + 1
         root = ET.parse((private_spec.parent / item["xml"]).resolve()).getroot()
+        if root.attrib.get("article-type") != "research-article":
+            raise CorpusError("Only JATS research articles are accepted in this pilot")
         recorded = {n.text.strip() for n in root.findall(".//article-id") if n.text}
         if item["pmcid"] not in recorded:
             raise CorpusError("PMCID does not match the local OA XML")
-        licenses = [str(n.attrib) + " " + " ".join(n.itertext()) for n in root.findall(".//license")]
-        if not any("creativecommons.org/licenses/by/" in value.lower() for value in licenses):
+        if not any(_cc_by_license(node) for node in root.findall(".//license")):
             raise CorpusError("Only verified CC BY OA XML is accepted in this pilot")
         target_title = item.get("section_title", "discussion").lower().strip()
         body = root.find(".//body")
@@ -82,10 +94,21 @@ def build_manifest(private_spec: Path, output: Path) -> dict:
         if len(WORD.findall(text)) < 200:
             raise CorpusError("Each reviewed Discussion needs at least 200 English words")
         staging.append((item["paper_id"], text))
-        papers.append({"author_id": item["author_id"], "paper_id": item["paper_id"],
-                       "stratum": item["stratum"], "path": item["paper_id"] + ".txt",
-                       "genre": "original_research", "section": "discussion",
-                       "primary_drafter_verified": True})
+        metadata = {"author_id": item["author_id"], "paper_id": item["paper_id"],
+                    "stratum": item["stratum"], "path": item["paper_id"] + ".txt",
+                    "genre": "original_research", "section": "discussion",
+                    "primary_drafter_verified": True}
+        journal = root.findtext(".//journal-meta/journal-title-group/journal-title") or root.findtext(".//journal-meta/journal-title")
+        if journal:
+            metadata["journal"] = journal.strip()
+        for date in root.findall(".//article-meta/pub-date"):
+            year, month = date.findtext("year"), date.findtext("month")
+            if year and month and re.fullmatch(r"\d{4}", year) and re.fullmatch(r"\d{1,2}", month) and 1 <= int(month) <= 12:
+                metadata["publication_month"] = f"{year}-{int(month):02d}"
+                break
+        if isinstance(item.get("topic_id"), str) and item["topic_id"].strip():
+            metadata["topic_id"] = item["topic_id"].strip()
+        papers.append(metadata)
     if len(authors) != 2 or sorted(authors.values()) != [3, 3] or len({p["stratum"] for p in papers}) != 1:
         raise CorpusError("Use two independently verified original drafters, three papers each, in one matched stratum")
     output.mkdir(parents=True)

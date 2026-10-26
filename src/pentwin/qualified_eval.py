@@ -15,12 +15,14 @@ from pentwin.axis_metrics import AXIS_METRICS, calibrate, margins, measure, prof
 from pentwin.paper_grounded_eval import MIN_WORDS
 from pentwin.style_engine import _sentences, WORD
 from pentwin.semantic_guard import load_semantic_scores, semantic_guard, semantic_guard_from_scores
-from pentwin.ablation_protocol import CONDITIONS
+from pentwin.ablation_protocol import AXES, CONDITIONS
 from collections import defaultdict
 
 
-MIN_CORRECT = 5
-MIN_EACH_AUTHOR = 2
+# Operational permission to *explore* a matching axis, not an estimate of
+# out-of-sample attribution or a threshold on generated-text quality.
+MIN_CORRECT = 4
+MIN_EACH_AUTHOR = 1
 
 
 def _digests(manifest: Path) -> set[str]:
@@ -44,13 +46,24 @@ def qualify_evaluators(first: Path, second: Path) -> dict:
                       "available": [sum(item["available"] for item in cohort.values()) for cohort in counts],
                       "per_author": [[item["correct"] for item in sorted(cohort.values(), key=lambda x: x["correct"])]
                                      for cohort in counts],
+                      "writer_imbalance": [sorted(item["correct"] for item in cohort.values()) == [1, 3]
+                                           for cohort in counts],
                       "eligible_for_exploratory_scoring": qualified}
-    return {"status": "exploratory_eligible" if all(item["eligible_for_exploratory_scoring"] for item in axes.values()) else "ineligible",
-            "threshold": {"per_cohort": "at least 5/6", "per_author": "at least 2/3", "cohorts_required": 2},
+    eligible = [axis for axis, item in axes.items() if item["eligible_for_exploratory_scoring"]]
+    return {"status": "exploratory_eligible" if len(eligible) == len(axes) else
+            "partial_exploratory_eligible" if eligible else "ineligible",
+            "threshold": {"per_cohort": "at least 4/6", "per_author": "at least 1/3", "cohorts_required": 2},
             "axes": axes, "matrix": AXIS_METRICS,
             "risks": [a["confounds"], b["confounds"]],
             "domain_diagnostics": [a["domain_diagnostics"], b["domain_diagnostics"]],
-            "interpretation": "Each style axis is judged only by its matching metric. All six human papers per cohort must be measurable; previously inspected cohorts do not establish external validity. Failed axes abstain from generation acceptance."}
+            "interpretation": "Each style axis is judged only by its matching metric. All six human papers per cohort must be measurable. Four of six is a weak operational exploration gate (a fair two-choice guess reaches at least four in 22/64 independent trials); 1/3 plus 3/3 is flagged as writer imbalance. Previously inspected cohorts do not establish external validity. Failed axes abstain from generation acceptance."}
+
+
+def _required_variants(eligible_axes: list[str]) -> set[str]:
+    """The complete factorial over eligible axes, using the public labels."""
+    selected = set(eligible_axes)
+    return {label for label in CONDITIONS if label != "none" and
+            set(AXES if label == "all" else label.split("_")) <= selected}
 
 
 def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None,
@@ -85,7 +98,13 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
         raise CorpusError("Need a nonempty cases list")
     paired = defaultdict(dict)
     seen = set()
-    required = set(CONDITIONS) - {"none"}
+    full = set(CONDITIONS) - {"none"}
+    reduced = _required_variants([axis for axis, item in gate["axes"].items()
+                                  if item["eligible_for_exploratory_scoring"]])
+    allowed_plans = {frozenset(full)}
+    if reduced:
+        allowed_plans.add(frozenset(reduced))
+    common_labels = None
     for case in cases:
         fields = ("case_id", "author_id", "content_id", "model", "section", "content_brief", "baseline")
         if not isinstance(case, dict) or any(not isinstance(case.get(k), str) or not case[k].strip()
@@ -95,15 +114,24 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
             raise CorpusError("Invalid case ID, author or section")
         seen.add(case["case_id"])
         variants = case.get("variants")
-        if not isinstance(variants, dict) or not required <= variants.keys() or set(variants) - required - {"all_snippet"}:
-            raise CorpusError("All seven card conditions, and optionally all_snippet, are required")
+        if not isinstance(variants, dict):
+            raise CorpusError("Variants must contain the full factorial or every eligible-axis condition")
+        snippet = {label for label in variants if label.endswith("_snippet")}
+        base_labels = set(variants) - snippet
+        if frozenset(base_labels) not in allowed_plans or len(snippet) > 1 or any(
+                label[:-8] not in base_labels for label in snippet):
+            raise CorpusError("Variants need all seven card conditions or a complete eligible-axis factorial, plus an optional matching snippet")
+        if common_labels is None:
+            common_labels = set(variants)
+        elif set(variants) != common_labels:
+            raise CorpusError("Use identical variant labels across all cases")
         if any(not isinstance(v, str) or not v.strip() for v in variants.values()):
             raise CorpusError("Every variant needs nonempty continuation text")
-        if "all_snippet" in variants:
+        if snippet:
             anchor = case.get("snippet_anchor")
             if not isinstance(anchor, str) or not anchor.strip():
                 raise CorpusError("Snippet condition requires its private human-authored anchor")
-            if variants["all_snippet"].lstrip().startswith(anchor.strip()):
+            if variants[next(iter(snippet))].lstrip().startswith(anchor.strip()):
                 raise CorpusError("Score only the continuation; remove the human-authored anchor")
         if case["author_id"] in paired[case["content_id"]]:
             raise CorpusError("One case per author and content brief")
@@ -149,7 +177,13 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
                                                  d["margin_changes"][axis][label] > 0 for d in details),
                                  "measurable": sum(d["margin_changes"][axis][label] is not None for d in details),
                                  "of": len(details),
-                                 "eligible": gate["axes"][axis]["eligible_for_exploratory_scoring"]}
+                                 "eligible": gate["axes"][axis]["eligible_for_exploratory_scoring"],
+                                 "improved_and_semantic_pass": (sum(
+                                     d["margin_changes"][axis][label] is not None and
+                                     d["margin_changes"][axis][label] > 0 and
+                                     d["semantic"]["candidates"][label]["pass"] for d in details)
+                                     if (encoder or imported) and gate["axes"][axis]["eligible_for_exploratory_scoring"]
+                                     else None)}
                           for axis in AXIS_METRICS}
         summary[label]["semantic_pass"] = (sum(d["semantic"]["status"] == "scored" and
                                               d["semantic"]["candidates"][label]["pass"] for d in details)
@@ -157,6 +191,8 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
     return {"status": "evaluator_ineligible" if gate["status"] == "ineligible" else
             "descriptive_only" if encoder or imported else "semantic_unavailable",
             "gate": gate, "cases": len(cases), "summary": summary, "details": details,
+            "condition_set": "full_factorial" if set(cases[0]["variants"]) -
+            {label for label in cases[0]["variants"] if label.endswith("_snippet")} == full else "eligible_axes_only",
             "eligible_axes": [axis for axis, item in gate["axes"].items()
                               if item["eligible_for_exploratory_scoring"]],
             "excluded_axes": [axis for axis, item in gate["axes"].items()
