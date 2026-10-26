@@ -243,6 +243,8 @@ def evaluate_factorial(first: Path, second: Path, cases_path: Path, encoder=None
                      if imported else semantic_guard(case["content_brief"], case["baseline"], case["variants"], encoder)
                      if encoder else None)
         details.append({"case_id": case["case_id"], "author_id": author, "content_id": case["content_id"],
+                        "model": case["model"],
+                        "input_sha256": {label: hashlib.sha256(drafts[label].encode()).hexdigest() for label in labels},
                         "margin_changes": scores, "semantic": semantics,
                         "technical_term_coverage": {label: technical_term_coverage(measures[label], reviewed_terms)
                                                     for label in labels}})
