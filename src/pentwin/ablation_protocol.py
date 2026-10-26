@@ -44,14 +44,15 @@ def snippet_from_target(target_text: str) -> str:
 
 
 def conditions(rows: list[dict], section: str, move: str = "", target_text: str = "",
-               confirmed_author_written: bool = False) -> dict:
+               confirmed_author_written: bool = False, lexical_only: bool = False) -> dict:
     card = build_exploratory_card(rows, section, move)
     axes = {"lexical": exploratory_instructions(card, ("wording",)),
             "ending": ending_instructions(rows, section, move),
             "order": exploratory_instructions(card, ("cue_order",))}
     base = "Write an English academic passage for the section from the same content brief and word count. Return prose only."
     plans = {}
-    for condition in CONDITIONS:
+    selected_conditions = ("none", "lexical") if lexical_only else CONDITIONS
+    for condition in selected_conditions:
         selected = () if condition == "none" else AXES if condition == "all" else tuple(condition.split("_"))
         missing = [axis for axis in selected if not axes[axis]]
         plans[condition] = {"available": not missing, "missing_axes": missing,
@@ -63,13 +64,17 @@ def conditions(rows: list[dict], section: str, move: str = "", target_text: str 
         # Prevent using a paper in the sealed calibration corpus as a target.
         if any(anchor in " ".join(row["text"].split()) for row in rows):
             raise CorpusError("Snippet target must be separate from development and calibration papers")
-        plans["all_snippet"] = {"available": plans["all"]["available"],
-                                "missing_axes": plans["all"]["missing_axes"],
+        snippet_condition = "lexical_snippet" if lexical_only else "all_snippet"
+        snippet_axes = ("lexical",) if lexical_only else AXES
+        base_condition = "lexical" if lexical_only else "all"
+        plans[snippet_condition] = {"available": plans[base_condition]["available"],
+                                "missing_axes": plans[base_condition]["missing_axes"],
                                 "instructions": [base, "Continue after this exact human-authored opening; output only the continuation. Do not repeat or rewrite the opening.",
-                                                 anchor] + [item for axis in AXES for item in axes[axis]],
+                                                 anchor] + [item for axis in snippet_axes for item in axes[axis]],
                                 "anchor_words": len(anchor.split()),
                                 "anchor_sha256": hashlib.sha256(anchor.encode()).hexdigest()}
     return {"status": "experimental_plan", "section": section, "move": move,
+            "condition_set": "lexical_only" if lexical_only else "full_factorial",
             "profile_digest": card.get("profile_digest"), "axis_available": {k: bool(v) for k, v in axes.items()},
             "shared_control": "Same brief, target length, host model and settings for every condition. Separate target authored text is needed only for +Snippet. Score only the continuation, excluding the anchor.",
             "conditions": plans,
