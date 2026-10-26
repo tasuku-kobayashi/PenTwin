@@ -124,9 +124,25 @@ def _distance(actual: dict, target: dict) -> dict[str, float]:
             for key, expected in target.items() if key in actual}
 
 
-def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict:
+def _protected_counts(original: str, spans: list[str] | None) -> dict[str, int]:
+    if spans is None:
+        return {}
+    if not isinstance(spans, list) or len(spans) > 30 or any(
+            not isinstance(span, str) or not span or len(span) > 200 for span in spans):
+        raise CorpusError("Provide at most 30 nonempty protected spans of at most 200 characters")
+    if len(set(spans)) != len(spans):
+        raise CorpusError("Protected spans must be unique")
+    counts = {span: original.count(span) for span in spans}
+    if any(count == 0 for count in counts.values()):
+        raise CorpusError("Each protected span must occur exactly in the original draft")
+    return counts
+
+
+def guidance(rows: list[dict], draft: str, section: str, move: str = "",
+             protected_spans: list[str] | None = None) -> dict:
     if not draft.strip() or len(draft) > 30_000:
         raise CorpusError("Provide a nonempty English draft of at most 30,000 characters")
+    protected = _protected_counts(draft, protected_spans)
     target = aggregate(rows, section, move)
     if target["status"] == "insufficient_evidence":
         return {"status": "insufficient_evidence", "section": target["section"], "move": target["move"],
@@ -166,21 +182,25 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict
             "draft_measurements": {k: round(actual[k], 3) for k in target["target"] if not k.startswith("function:")},
             "diagnostic_features_excluded_from_rewrite": ["function_word_rates"],
             "prioritized_edits": directions,
+            "protected_spans": list(protected),
             "wording_preferences": {"connectors": target["common_connectors"],
                                     "stance_verbs": target["common_stance_verbs"]},
             "rewrite_contract": [
                 "Rewrite the user's English draft to match the supplied stylistic tendencies, not its topic or findings.",
                 "Keep each assertion, comparison, group, direction, number, unit, citation, negation and level of certainty grounded in the original and fact sheet.",
                 "Do not add findings, references or claims. Do not quote, retrieve or imitate any source passage verbatim.",
+                "Make the smallest edits needed; retain every protected span exactly as written and in context.",
                 "When a style preference conflicts with factual precision or clarity, preserve meaning and mark the uncertainty for the author.",
-                "After writing, call assess_revision with the exact original and exact proposed text; a tool check never replaces author review.",
+                "After writing, call assess_revision with the exact original, exact proposed text and the same protected_spans; a tool check never replaces author review.",
             ],
             "limitations": "A model may ignore this plan or alter the text after checking. Measurements do not prove author likeness."}
 
 
-def assess(rows: list[dict], original: str, revised: str, section: str, move: str = "") -> dict:
+def assess(rows: list[dict], original: str, revised: str, section: str, move: str = "",
+           protected_spans: list[str] | None = None) -> dict:
     if not original.strip() or not revised.strip() or max(len(original), len(revised)) > 30_000:
         raise CorpusError("Provide both English texts of at most 30,000 characters")
+    protected = _protected_counts(original, protected_spans)
     profile = aggregate(rows, section, move)
     if profile["status"] == "insufficient_evidence":
         return profile
@@ -202,6 +222,8 @@ def assess(rows: list[dict], original: str, revised: str, section: str, move: st
     alarm_counts = {name: {"original": len(pattern.findall(original)), "revision": len(pattern.findall(revised))}
                     for name, pattern in (("negation", negation), ("uncertainty", uncertainty), ("citations", CITATION))}
     original_citations, revised_citations = set(CITATION.findall(original)), set(CITATION.findall(revised))
+    changed_spans = [{"span": span, "original_count": count, "revision_count": revised.count(span)}
+                     for span, count in protected.items() if revised.count(span) != count]
     return {"status": "needs_human_review", "profile_digest": profile["profile_digest"],
             "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
             "revision_sha256": hashlib.sha256(revised.encode()).hexdigest(),
@@ -209,4 +231,5 @@ def assess(rows: list[dict], original: str, revised: str, section: str, move: st
             "count_changes": {k: v for k, v in alarm_counts.items() if v["original"] != v["revision"]},
             "citation_token_changes": {"added": sorted(revised_citations - original_citations),
                                        "removed": sorted(original_citations - revised_citations)},
-            "limitations": "Style distance is not author likeness. Equal counts do not preserve meaning. Verify claims, citations, terminology and naturalness manually."}
+            "protected_span_changes": changed_spans,
+            "limitations": "Exact protected-span counts do not prove meaning or preserve relationships. Style distance is not author likeness. Verify claims, citations, terminology and naturalness manually."}
