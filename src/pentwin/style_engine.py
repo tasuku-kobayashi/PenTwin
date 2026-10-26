@@ -99,10 +99,12 @@ def aggregate(rows: list[dict], section: str = "", move: str = "") -> dict:
     target = {key: round(median(data[key] for data in measured.values()), 3) for key in keys}
     spread = {key: round(max(data[key] for data in measured.values()) - min(data[key] for data in measured.values()), 3)
               for key in keys}
+    # A word used by only one paper is not evidence of a writer-wide preference.
+    supported = {key for key in keys if sum(data[key] > 0 for data in measured.values()) >= 2}
     connector = sorted(((key.split(":", 1)[1], value) for key, value in target.items()
-                        if key.startswith("connector:") and value > 0), key=lambda item: (-item[1], item[0]))[:3]
+                        if key.startswith("connector:") and key in supported), key=lambda item: (-item[1], item[0]))[:3]
     stance = sorted(((key.split(":", 1)[1], value) for key, value in target.items()
-                     if key.startswith("stance:") and value > 0), key=lambda item: (-item[1], item[0]))[:3]
+                     if key.startswith("stance:") and key in supported), key=lambda item: (-item[1], item[0]))[:3]
     return {"status": "provisional", "section": section or "all", "move": move or "all", "families": len(measured),
             "passages": sum(len(groups[f]) for f in measured),
             "sentences": int(sum(data["_sentences"] for data in measured.values())),
@@ -124,25 +126,9 @@ def _distance(actual: dict, target: dict) -> dict[str, float]:
             for key, expected in target.items() if key in actual}
 
 
-def _protected_counts(original: str, spans: list[str] | None) -> dict[str, int]:
-    if spans is None:
-        return {}
-    if not isinstance(spans, list) or len(spans) > 30 or any(
-            not isinstance(span, str) or not span or len(span) > 200 for span in spans):
-        raise CorpusError("Provide at most 30 nonempty protected spans of at most 200 characters")
-    if len(set(spans)) != len(spans):
-        raise CorpusError("Protected spans must be unique")
-    counts = {span: original.count(span) for span in spans}
-    if any(count == 0 for count in counts.values()):
-        raise CorpusError("Each protected span must occur exactly in the original draft")
-    return counts
-
-
-def guidance(rows: list[dict], draft: str, section: str, move: str = "",
-             protected_spans: list[str] | None = None) -> dict:
+def guidance(rows: list[dict], draft: str, section: str, move: str = "") -> dict:
     if not draft.strip() or len(draft) > 30_000:
         raise CorpusError("Provide a nonempty English draft of at most 30,000 characters")
-    protected = _protected_counts(draft, protected_spans)
     target = aggregate(rows, section, move)
     if target["status"] == "insufficient_evidence":
         return {"status": "insufficient_evidence", "section": target["section"], "move": target["move"],
@@ -155,15 +141,15 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "",
     descriptors = {
         "sentence_words": ("shorten sentence structure", "lengthen sentence structure where clarity permits"),
         "paragraph_sentences": ("use fewer sentences per paragraph", "connect related sentences into fuller paragraphs"),
-        "hedge_rate": ("avoid adding unnecessary uncertainty", "use calibrated uncertainty only where the evidence supports it"),
-        "first_person_rate": ("use less first-person phrasing", "use first-person phrasing only for actions the authors actually performed"),
-        "passive_rate": ("prefer direct active phrasing where scientifically accurate", "use passive constructions selectively without obscuring the actor"),
+        "hedge_rate": ("use fewer hedging expressions", "use more hedging expressions in the author's typical phrasing"),
+        "first_person_rate": ("use less first-person phrasing", "use first-person phrasing more often"),
+        "passive_rate": ("prefer direct active phrasing", "use passive constructions more often"),
         "semicolon_rate": ("reduce semicolons", "consider semicolons only where they clarify closely linked statements"),
         "parenthesis_rate": ("reduce parenthetical asides", "consider short parenthetical qualifications where useful"),
         "question_rate": ("reduce rhetorical questions", "consider a question only where it serves the argument"),
-        "rhetoric:contrast": ("make contrasts more selective", "make evidence-based contrasts explicit"),
-        "rhetoric:reason": ("use causal transitions more selectively", "make the reasoning between claims explicit where supported"),
-        "rhetoric:limitation": ("avoid redundant limitation language", "state relevant limitations explicitly without inventing uncertainty"),
+        "rhetoric:contrast": ("make contrast markers more selective", "make contrasts more explicit"),
+        "rhetoric:reason": ("use reasoning transitions more selectively", "make transitions between reasons more explicit"),
+        "rhetoric:limitation": ("use limitation markers more selectively", "use limitation markers more often"),
     }
     for key in sorted(descriptors, key=lambda name: -differences.get(name, 0)):
         if differences.get(key, 0) < 0.22:
@@ -182,25 +168,21 @@ def guidance(rows: list[dict], draft: str, section: str, move: str = "",
             "draft_measurements": {k: round(actual[k], 3) for k in target["target"] if not k.startswith("function:")},
             "diagnostic_features_excluded_from_rewrite": ["function_word_rates"],
             "prioritized_edits": directions,
-            "protected_spans": list(protected),
             "wording_preferences": {"connectors": target["common_connectors"],
                                     "stance_verbs": target["common_stance_verbs"]},
             "rewrite_contract": [
-                "Rewrite the user's English draft to match the supplied stylistic tendencies, not its topic or findings.",
-                "Keep each assertion, comparison, group, direction, number, unit, citation, negation and level of certainty grounded in the original and fact sheet.",
-                "Do not add findings, references or claims. Do not quote, retrieve or imitate any source passage verbatim.",
-                "Make the smallest edits needed; retain every protected span exactly as written and in context.",
-                "When a style preference conflicts with factual precision or clarity, preserve meaning and mark the uncertainty for the author.",
-                "After writing, call assess_revision with the exact original, exact proposed text and the same protected_spans; a tool check never replaces author review.",
+                "Rewrite the user's English draft toward the supplied author-style tendencies, focusing on rhythm, wording, stance and argument flow.",
+                "Avoid generic academic polish that erases distinctive habits. Do not quote or imitate any source passage verbatim.",
+                "Treat style guidance as suggestions; this tool does not evaluate scientific claims or preserve their meaning.",
+                "After writing, call assess_revision with the exact original and proposed text to inspect style movement; do not call its score author likeness.",
             ],
+            "scope": "Authorial style only. Scientific claims, citations and meaning need an independent verifier outside PenTwin.",
             "limitations": "A model may ignore this plan or alter the text after checking. Measurements do not prove author likeness."}
 
 
-def assess(rows: list[dict], original: str, revised: str, section: str, move: str = "",
-           protected_spans: list[str] | None = None) -> dict:
+def assess(rows: list[dict], original: str, revised: str, section: str, move: str = "") -> dict:
     if not original.strip() or not revised.strip() or max(len(original), len(revised)) > 30_000:
         raise CorpusError("Provide both English texts of at most 30,000 characters")
-    protected = _protected_counts(original, protected_spans)
     profile = aggregate(rows, section, move)
     if profile["status"] == "insufficient_evidence":
         return profile
@@ -215,21 +197,9 @@ def assess(rows: list[dict], original: str, revised: str, section: str, move: st
     # Diagnostic only: no optimizing or claiming success based on this aggregate.
     style = {"before": round(sum(before[k] for k in selected) / len(selected), 3),
              "after": round(sum(after[k] for k in selected) / len(selected), 3)}
-    from pentwin.server import audit_draft
-    alarms = audit_draft(original, revised)
-    negation = re.compile(r"\b(?:not|no|never|neither|without|failed to)\b", re.I)
-    uncertainty = re.compile(r"\b(?:may|might|could|suggest(?:s|ed)?|possibly|potentially)\b", re.I)
-    alarm_counts = {name: {"original": len(pattern.findall(original)), "revision": len(pattern.findall(revised))}
-                    for name, pattern in (("negation", negation), ("uncertainty", uncertainty), ("citations", CITATION))}
-    original_citations, revised_citations = set(CITATION.findall(original)), set(CITATION.findall(revised))
-    changed_spans = [{"span": span, "original_count": count, "revision_count": revised.count(span)}
-                     for span, count in protected.items() if revised.count(span) != count]
-    return {"status": "needs_human_review", "profile_digest": profile["profile_digest"],
+    return {"status": "style_diagnostic_only", "profile_digest": profile["profile_digest"],
             "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
             "revision_sha256": hashlib.sha256(revised.encode()).hexdigest(),
-            "style_distance_diagnostic": style, "lexical_alarms": alarms,
-            "count_changes": {k: v for k, v in alarm_counts.items() if v["original"] != v["revision"]},
-            "citation_token_changes": {"added": sorted(revised_citations - original_citations),
-                                       "removed": sorted(original_citations - revised_citations)},
-            "protected_span_changes": changed_spans,
-            "limitations": "Exact protected-span counts do not prove meaning or preserve relationships. Style distance is not author likeness. Verify claims, citations, terminology and naturalness manually."}
+            "style_distance_diagnostic": style,
+            "scope": "Measures the selected style features only; scientific content is outside PenTwin.",
+            "limitations": "A lower distance is not proof that a reader recognizes the author. Compare blinded outputs with other authors and generic academic writing."}
