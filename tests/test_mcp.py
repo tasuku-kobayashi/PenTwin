@@ -94,11 +94,19 @@ class MCPTests(unittest.TestCase):
                 held = [r["text"] for r in load_corpus(self.run) if r["split"] == "holdout"]
                 self.assertTrue(all(t not in json.dumps(response) for t in held))
                 self.assertTrue(all(r["text"] not in json.dumps(response) for r in load_corpus(self.run)))
-                plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was recorded in the assay.", "section": "introduction"})
+                plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
+                                                               "section": "introduction", "protected_spans": ["12.5 mg/mL"]})
                 self.assertFalse(plan.is_error)
                 plan_response = json.loads(plan.content[0].text)
                 self.assertEqual(plan_response["status"], "rewrite_guidance")
                 self.assertFalse(any(k.startswith("function:") for k in plan_response["target"]))
+                self.assertEqual(plan_response["protected_spans"], ["12.5 mg/mL"])
+                checked = await client.call_tool("assess_revision", {
+                    "original": "The synthetic response was 12.5 mg/mL in the assay.",
+                    "revised": "The synthetic response was 15 mg/mL in the assay.",
+                    "section": "introduction", "protected_spans": ["12.5 mg/mL"]})
+                self.assertFalse(checked.is_error)
+                self.assertEqual(json.loads(checked.content[0].text)["protected_span_changes"][0]["span"], "12.5 mg/mL")
         asyncio.run(exercise())
 
 
