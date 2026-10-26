@@ -11,7 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from pentwin.cli import CorpusError
-from pentwin.style_engine import FUNCTION_WORDS, _distance, _measurement, _sentences
+from pentwin.style_engine import FUNCTION_WORDS, WORD, _distance, _measurement, _sentences
 from pentwin.validation import diagnose
 
 
@@ -21,15 +21,21 @@ FEATURES = {
     "function_words": tuple("function:" + word for word in FUNCTION_WORDS),
     "surface_structure": ("sentence_words", "semicolon_rate", "parenthesis_rate", "question_rate"),
 }
-WINDOW_SENTENCES = 7
-MIN_WORDS = 50
+MIN_WORDS = 200
 
 
 def _window(body: str) -> dict:
     sentences = _sentences(body)
-    measure = _measurement([" ".join(sentences[:WINDOW_SENTENCES])])
+    selected = []
+    count = 0
+    for sentence in sentences:
+        selected.append(sentence)
+        count += len(WORD.findall(sentence))
+        if count >= MIN_WORDS:
+            break
+    measure = _measurement([" ".join(selected)])
     if not measure or measure["_tokens"] < MIN_WORDS:
-        raise CorpusError("Each source needs at least 50 measurable words in its first seven sentences")
+        raise CorpusError("Each source needs at least 200 measurable words in its selected section")
     return measure
 
 
@@ -77,7 +83,7 @@ def evaluate_paper_grounded(manifest_path: Path, cases_path: Path | None = None)
     ready = {name: sum(counts[name].values()) >= 5 and min(counts[name].values()) >= 2
              for name in FEATURES}
     report = {"status": "human_calibration_only", "source_papers": 6,
-              "unit": "first seven measurable sentences per paper, minimum 50 words",
+              "unit": "initial complete sentences through at least 200 measurable words per paper",
               "features": {name: list(keys) for name, keys in FEATURES.items()},
               "calibration": {"correct_by_author": counts, "passes_exploratory_screen": ready,
                               "cases": calibration},
@@ -115,7 +121,7 @@ def evaluate_paper_grounded(manifest_path: Path, cases_path: Path | None = None)
         rival = next(name for name in authors if name != author)
         measurements = {label: _measurement([case[label]]) for label in ("baseline", "guided")}
         if any(not m or m["_tokens"] < MIN_WORDS for m in measurements.values()):
-            raise CorpusError("Each generated passage needs at least 50 measurable words")
+            raise CorpusError("Each generated passage needs at least 200 measurable words")
         scores = {}
         for name, keys in FEATURES.items():
             margins = {label: round(_margin(m, profiles[author], profiles[rival], keys), 3)
