@@ -105,8 +105,16 @@ class MCPTests(unittest.TestCase):
                 protocol = await client.call_tool("generation_protocol", {"section": "introduction"})
                 self.assertFalse(protocol.is_error)
                 protocol_payload = json.loads(protocol.content[0].text)
-                self.assertEqual(set(protocol_payload["conditions"]), {"zero_shot", "card", "card_critique"})
+                self.assertEqual(set(protocol_payload["conditions"]),
+                                 {"none", "lexical", "ending", "order", "lexical_ending", "lexical_order", "ending_order", "all"})
                 self.assertTrue(all(r["text"] not in json.dumps(protocol_payload) for r in load_corpus(self.run)))
+                target = "A human authored target passage provides the opening of a synthetic experiment. " * 12
+                anchored = await client.call_tool("generation_protocol", {"section": "introduction",
+                    "target_text": target, "confirmed_author_written": True})
+                self.assertFalse(anchored.is_error)
+                anchor = json.loads(anchored.content[0].text)["conditions"]["all_snippet"]
+                self.assertEqual(anchor["anchor_words"], min(50, len(target.split()) // 5))
+                self.assertNotIn(target, json.dumps(anchor))
                 self.assertTrue(all("stance" not in instruction or "soft" in instruction
                                     for instruction in stance_payload["instructions"]))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
