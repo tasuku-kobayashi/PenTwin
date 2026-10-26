@@ -344,6 +344,9 @@ def main(argv: list[str] | None = None) -> int:
     heldout = sub.add_parser("heldout-axes", help="Exploratory weak-axis comparison against whole held-out papers")
     heldout.add_argument("manifest", type=Path)
     heldout.add_argument("cases", type=Path)
+    grounded = sub.add_parser("paper-eval", help="Calibrate on held-out human papers; optionally score paired drafts")
+    grounded.add_argument("manifest", type=Path)
+    grounded.add_argument("cases", type=Path, nargs="?")
     args = parser.parse_args(argv)
     try:
         if args.command == "serve":
@@ -370,6 +373,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "heldout-axes":
             from pentwin.heldout_eval import evaluate_heldout_axes
             result = evaluate_heldout_axes(args.manifest, args.cases)
+        elif args.command == "paper-eval":
+            from pentwin.paper_grounded_eval import evaluate_paper_grounded
+            result = evaluate_paper_grounded(args.manifest, args.cases)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
