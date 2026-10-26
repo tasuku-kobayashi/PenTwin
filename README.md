@@ -2,7 +2,7 @@
 
 **Current research basis:** [Wang et al. (2025) and its directly cited work](docs/PAPER_GROUNDED_LOGIC.md). The new `paper-eval` command calibrates independent short-passage diagnostics on held-out human papers before it interprets matched generated drafts. The initial private pilot identifies 5/6 human windows on each metric but improves only 3/6 guided drafts on each, with opposite writers benefiting. This is exploratory evidence of a remaining generation gap, not author likeness. Earlier style cards and proxy results remain historical aids.
 
-The MCP `generation_protocol(section)` tool provides comparable generic, card-guided and card-plus-critique conditions without returning paper excerpts. It prepares an experiment; it does not run the host model or establish that any condition works.
+The MCP `generation_protocol(section)` tool provides a generic baseline and seven combinations of lexical, sentence-ending and explanation-order clues. An optional separately provided, confirmed human-authored target adds `all_snippet`; no excerpt from the sealed corpus is returned. The [qualified experiment record](docs/QUALIFIED_GENERATION_EXPERIMENT.md) gives the two-cohort evaluator gate, incomplete legacy ablation, semantic-screen setup and missing evidence. The protocol prepares conditions; it does not run the host model or establish that any condition works.
 
 PenTwin is an English life sciences author-style project. It prepares a manually reviewed corpus and serves style observations through a read-only local MCP server. The host LLM writes prose; PenTwin does not generate prose, call an LLM, publish a manuscript, or certify authorship or author likeness. Scientific meaning and citation checks are outside this project and belong to an independent service. **The three-paper minimum is an ingestion threshold, not evidence of reliable style imitation.**
 
@@ -12,7 +12,7 @@ PenTwin is an English life sciences author-style project. It prepares a manually
 - `pandoc` on PATH for `.tex` input. Source must be a self-contained file; included files and custom macros must be inspected in the output.
 - At least three independent paper families. Two versions of the same paper **must** share a `family_id`.
 
-Create a private manifest based on `manifest.example.json`. A paper is eligible for the final corpus only when its primary writing contribution is confirmed. The legacy `model_excerpt_permission` field is optional and defaults to `no`; the current MCP server never returns paper excerpts. The manifest makes no network calls. Keep all source papers, review sheets, and output directories outside Git. The CLI rejects an output directory anywhere inside a Git working tree.
+Create a private manifest based on `manifest.example.json`. A paper is eligible for the final corpus only when its primary writing contribution is confirmed. The legacy `model_excerpt_permission` field is optional and defaults to `no`; the current MCP server never returns excerpts from its sealed corpus. The optional +Snippet tool response contains a short opening from a separately supplied, confirmed human-authored target. The manifest makes no network calls. Keep all source papers, review sheets, and output directories outside Git. The CLI rejects an output directory anywhere inside a Git working tree.
 
 ```
 pentwin prepare /private/pentwin/manifest.json /private/pentwin/run-001
@@ -39,7 +39,7 @@ The process reads JSON-RPC from stdin and writes MCP responses to stdout. Config
 
 ### Author-style rewrite logic
 
-`style_profile` measures English writing from visually reviewed **development** papers locally, with one vote per independent paper family. It measures sentence and paragraph length, hedging, first person, passive constructions, citation and punctuation use, and a fixed list of generic academic connectors and stance verbs. It returns only bounded aggregate numbers and generic vocabulary from that fixed list. Published or unpublished source text, names, and phrases do not enter this response. `model_excerpt_permission=no` permits this local calculation. No MCP tool serves raw paper examples.
+`style_profile` measures English writing from visually reviewed **development** papers locally, with one vote per independent paper family. It measures sentence and paragraph length, hedging, first person, passive constructions, citation and punctuation use, and a fixed list of generic academic connectors and stance verbs. It returns only bounded aggregate numbers and generic vocabulary from that fixed list. Published or unpublished source text, names, and phrases do not enter this response. `model_excerpt_permission=no` permits this local calculation. No MCP tool draws raw examples from the sealed corpus.
 
 The strict role card examines reviewed rhetorical moves in at least two development families. It selects repeated generic wording within each move, move-specific stance differences, and recurring move transitions in source order. `rewrite_plan` includes supported instructions to plan explanation order, choose wording and stance, then critique generic substitutions. If reviewed role evidence is absent, the strict card abstains; a numerical profile remains available. See [style card design](docs/STYLE_CARD.md). `pentwin contrast-card` can compare two privately sealed writer runs without returning source text.
 
@@ -75,7 +75,7 @@ python -m pentwin.cli auto-eval C:\private\pentwin\six-papers.json C:\private\pe
 
 The command checks source independence and paired content, then reports whether guided prose moves closer to the target than the rival profile. It includes raw length and seven-feature scores, a sentence-only comparator, and a short-passage score that omits paragraph length. No text or source paths are returned. This is an **automated proxy**, not a recognition test by a reader. It reuses features from the rewrite guidance and may be gamed by rhythm alone. Preserve case texts privately and report each writer separately. The [automated pilot report](docs/GENERATED_STYLE_VALIDATION.md) records both successes and failures.
 
-The older `blind` and `ratings` commands remain available for legacy experiments; they are not part of this validation path.
+For the current evaluator screen, run `pentwin qualify-eval` on two disjoint anonymous human cohorts; `pentwin factorial-eval` requires the complete matched card conditions and reports `semantic_unavailable` unless a local SBERT model is supplied. See the [current protocol](docs/QUALIFIED_GENERATION_EXPERIMENT.md). The older `paper-eval`, `auto-eval`, `blind` and `ratings` paths are historical exploratory checks and cannot certify a generation benefit on their own.
 
 ### Labels
 
@@ -86,7 +86,7 @@ Moves: `background`, `gap`, `objective`, `method`, `finding`, `comparison`, `int
 ## Limits and privacy
 
 - PDF line/column order and paragraph boundaries may be wrong; scanned PDFs may yield no text. DOCX inline objects and LaTeX macros/included files may be lost. Every candidate needs source checking. No parser output is considered authoritative.
-- The manifest's `model_excerpt_permission` field is retained for compatibility. The current server never returns source passages regardless of this field.
+- The manifest's `model_excerpt_permission` field is retained for compatibility. The current server never returns sealed-corpus passages regardless of this field. If the user supplies a separate target and enables +Snippet, its short opening is model-facing.
 - The public repository must contain code and synthetic tests only. The manifest with real paths, paper files, extracted text, and review outputs must remain private.
 - For a future ChatGPT desktop connection on Windows, validate the actual local plugin/transport setup and model-facing data flow before exposing any unpublished text. A local corpus does not imply a local-only LLM.
 
