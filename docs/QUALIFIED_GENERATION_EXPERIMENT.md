@@ -1,6 +1,6 @@
 # Qualified generation experiment, 2026-10-26
 
-**Historical protocol:** the seven-sentence screens below were superseded by the [200-word axis-matched protocol](AXIS_MATRIX_AND_OA_VALIDATION.md). Do not use their 5/6 result as current evaluator eligibility.
+**Historical protocol:** the seven-sentence screens below were superseded by the [200-word axis-matched protocol](AXIS_MATRIX_AND_OA_VALIDATION.md), whose current retrospective exploration threshold is 4/6 per cohort. Do not use these historical 5/6 results as current evaluator eligibility.
 
 ## Basis and frozen order
 
