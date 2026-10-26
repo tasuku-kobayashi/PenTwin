@@ -76,7 +76,7 @@ class MCPTests(unittest.TestCase):
                                            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")})
             async with Client(server) as client:
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "axis_plan", "rewrite_plan", "assess_revision"})
+                self.assertEqual({t.name for t in tools.tools}, {"corpus_status", "style_profile", "author_style_card", "axis_plan", "generation_protocol", "rewrite_plan", "assess_revision"})
                 status = await client.call_tool("corpus_status", {})
                 self.assertFalse(status.is_error)
                 self.assertTrue(json.loads(status.content[0].text)["sealed"])
@@ -102,6 +102,11 @@ class MCPTests(unittest.TestCase):
                 self.assertFalse(stance.is_error)
                 stance_payload = json.loads(stance.content[0].text)
                 self.assertEqual(stance_payload["status"], "experimental_plan")
+                protocol = await client.call_tool("generation_protocol", {"section": "introduction"})
+                self.assertFalse(protocol.is_error)
+                protocol_payload = json.loads(protocol.content[0].text)
+                self.assertEqual(set(protocol_payload["conditions"]), {"zero_shot", "card", "card_critique"})
+                self.assertTrue(all(r["text"] not in json.dumps(protocol_payload) for r in load_corpus(self.run)))
                 self.assertTrue(all("stance" not in instruction or "soft" in instruction
                                     for instruction in stance_payload["instructions"]))
                 plan = await client.call_tool("rewrite_plan", {"draft": "The synthetic response was 12.5 mg/mL in the assay.",
