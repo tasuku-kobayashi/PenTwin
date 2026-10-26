@@ -15,13 +15,14 @@ from pentwin.ablation_protocol import DIRECT
 from pentwin.cli import CorpusError
 from pentwin.exploratory_card import _cue
 from pentwin.paper_grounded_eval import MIN_WORDS, _window
+from pentwin.style_card import CONNECTIVE_PATTERNS, STANCE_PATTERNS
 from pentwin.style_engine import FUNCTION_WORDS, HEDGES, PASSIVE, WORD, _sentences
 from pentwin.validation import diagnose
 
 
 STOP = set(FUNCTION_WORDS) | {"a", "an", "and", "as", "at", "by", "from", "in", "is",
                               "it", "on", "our", "was", "we", "were", "are", "be"}
-AXIS_METRICS = {"lexical": "content_jaccard", "ending": "function_and_ending",
+AXIS_METRICS = {"lexical": "frozen_card_lexicon_jaccard_with_content_overlap_check", "ending": "function_and_ending",
                 "order": "discourse_transitions"}
 ACADEMIC = re.compile(r"\b(?:in this study|taken together|these findings|further studies|in contrast)\b", re.I)
 
@@ -34,7 +35,12 @@ def measure(text: str) -> dict:
     tails = [" ".join(WORD.findall(sentence)[-10:]) for sentence in sentences]
     cues = [cue for sentence in sentences if (cue := _cue(sentence))]
     edges = Counter(zip(cues, cues[1:]))
-    return {"content": set(words) - STOP, "tokens": words,
+    # The generation card already restricts itself to these generic expressions.
+    # Keep raw content words separately to expose topic/citation overlap.
+    card_terms = {"connector:" + label for label, pattern in CONNECTIVE_PATTERNS.items()
+                  if pattern.search(text)} | {"stance:" + label for label, pattern in STANCE_PATTERNS.items()
+                                            if pattern.search(text)}
+    return {"content": set(words) - STOP, "card_terms": card_terms, "tokens": words,
             "function": {w: words.count(w) / len(words) for w in FUNCTION_WORDS},
             "ending": {"qualified": sum(bool(HEDGES.search(t)) for t in tails) / len(tails),
                        "direct": sum(bool(DIRECT.search(t)) for t in tails) / len(tails)},
@@ -45,14 +51,17 @@ def measure(text: str) -> dict:
 
 
 def profile(samples: list[dict]) -> dict:
-    if len(samples) != 2:
-        raise CorpusError("Each profile needs exactly two independent reference papers")
-    return {"content": samples[0]["content"] | samples[1]["content"],
-            "recurring_terms": samples[0]["content"] & samples[1]["content"],
-            "function": {w: sum(s["function"][w] for s in samples) / 2 for w in FUNCTION_WORDS},
-            "ending": {w: sum(s["ending"][w] for s in samples) / 2 for w in ("qualified", "direct")},
-            "edges": {e: sum(s["edges"].get(e, 0) for s in samples) / 2
-                      for e in samples[0]["edges"].keys() | samples[1]["edges"].keys()},
+    if len(samples) < 2:
+        raise CorpusError("Each profile needs at least two independent reference papers")
+    content = [s["content"] for s in samples]
+    edge_keys = set().union(*(s["edges"] for s in samples))
+    return {"content": set().union(*content),
+            "recurring_terms": set.intersection(*content),
+            "card_terms": set().union(*(s["card_terms"] for s in samples)),
+            "function": {w: sum(s["function"][w] for s in samples) / len(samples) for w in FUNCTION_WORDS},
+            "ending": {w: sum(s["ending"][w] for s in samples) / len(samples) for w in ("qualified", "direct")},
+            "edges": {e: sum(s["edges"].get(e, 0) for s in samples) / len(samples)
+                      for e in edge_keys},
             "edge_count": sum(s["edge_count"] for s in samples)}
 
 
@@ -65,7 +74,8 @@ def _jaccard(a: set, b: set) -> float:
 
 
 def margins(candidate: dict, own: dict, rival: dict) -> dict[str, float | None]:
-    lexical = _jaccard(candidate["content"], own["content"]) - _jaccard(candidate["content"], rival["content"])
+    lexical = _jaccard(candidate["card_terms"], own["card_terms"]) - _jaccard(candidate["card_terms"], rival["card_terms"])
+    content = _jaccard(candidate["content"], own["content"]) - _jaccard(candidate["content"], rival["content"])
     function = (_l1(candidate["function"], rival["function"]) -
                 _l1(candidate["function"], own["function"]))
     ending = (_l1(candidate["ending"], rival["ending"]) -
@@ -75,7 +85,7 @@ def margins(candidate: dict, own: dict, rival: dict) -> dict[str, float | None]:
     order = None
     if candidate["edge_count"] >= 2 and own["edge_count"] >= 2 and rival["edge_count"] >= 2:
         order = _l1(candidate["edges"], rival["edges"]) - _l1(candidate["edges"], own["edges"])
-    return {"lexical": round(lexical, 5), "ending": round(combined, 5),
+    return {"lexical": round(lexical, 5), "content_jaccard": round(content, 5), "ending": round(combined, 5),
             "order": round(order, 5) if order is not None else None,
             "function_component": round(function, 5), "ending_component": round(ending, 5)}
 
@@ -120,11 +130,28 @@ def calibrate(manifest: Path) -> dict:
     totals = {axis: {author: {"correct": sum(row["author_id"] == author and row["margins"][axis] is not None
                                             and row["margins"][axis] > 0 for row in rows),
                               "available": sum(row["author_id"] == author and row["margins"][axis] is not None
-                                               for row in rows)} for author in authors} for axis in AXIS_METRICS}
-    domain = {author: {key: round(sum(sample[key] for _, sample in groups[author]) / 3, 3)
+                                               for row in rows)} for author in authors} for axis in (*AXIS_METRICS, "content_jaccard")}
+    domain = {author: {key: round(sum(sample[key] for _, sample in groups[author]) / len(groups[author]), 3)
                        for key in ("passive_rate", "formulaic_rate")}
               for author in authors}
+    journal_only = None
+    if all(isinstance(paper.get("journal"), str) and paper["journal"].strip() for paper in papers):
+        journals = defaultdict(list)
+        for paper in papers:
+            journals[paper["author_id"]].append(paper["journal"])
+        journal_only = {}
+        for author in authors:
+            rival = next(a for a in authors if a != author)
+            correct = available = 0
+            for index, journal in enumerate(journals[author]):
+                own = sum(other == journal for j, other in enumerate(journals[author]) if j != index)
+                other = sum(value == journal for j, value in enumerate(journals[rival]) if j != index)
+                if own != other:
+                    available += 1
+                    correct += own > other
+            journal_only[author] = {"correct": correct, "available": available}
     return {"metrics": AXIS_METRICS, "per_author": totals, "cases": rows,
             "domain_diagnostics": domain,
+            "journal_only_control": journal_only,
             "confounds": audit["confounds"]["reported_risks"],
-            "limitations": "Topic and section can dominate content Jaccard. Ending and order use fixed surface patterns and may abstain; no POS tagger or syntactic parser is used."}
+            "limitations": "The lexical gate uses the pre-existing fixed card vocabulary and separately checks raw content Jaccard; both can still reflect journal and topic. Ending and order use fixed surface patterns and may abstain; no POS tagger or syntactic parser is used."}
