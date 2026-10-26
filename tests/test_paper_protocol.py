@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,8 @@ from pathlib import Path
 from pentwin.ablation_protocol import CONDITIONS, snippet_from_target, conditions
 from pentwin.cli import CorpusError
 from pentwin.qualified_eval import qualify_evaluators, evaluate_factorial
-from pentwin.semantic_guard import semantic_guard, load_local_encoder
+from pentwin.semantic_guard import semantic_guard, load_local_encoder, make_semantic_template
+from pentwin.axis_metrics import measure, technical_term_coverage
 
 
 class FixedEncoder:
@@ -18,6 +20,16 @@ class FixedEncoder:
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_axis_matrix_requires_200_measurable_words(self):
+        sentence = "However, we suggest the synthetic molecular assay indicates a limited effect here. "
+        with self.assertRaisesRegex(CorpusError, "at least 200"):
+            measure(sentence * 10)
+        measured = measure(sentence * 20)
+        self.assertGreaterEqual(measured["words"], 200)
+        self.assertEqual(technical_term_coverage(measured, ["molecular", "assay"]), 1.0)
+        self.assertEqual(technical_term_coverage(measured, ["molecular assay", "RNA-seq"]), 0.5)
+        self.assertIsNone(technical_term_coverage(measured, []))
+
     def test_semantic_guard_compares_each_candidate_to_the_same_reference(self):
         r = semantic_guard("reference", "baseline", {"safe": "safe", "bad": "drift"}, FixedEncoder())
         self.assertEqual(r["status"], "scored")
@@ -56,7 +68,7 @@ class ProtocolTests(unittest.TestCase):
                         phrase = ("We could suggest a pattern in these artificial observations. "
                                   if author == "A" else
                                   "The artificial observations demonstrate a clear pattern here. ")
-                        (folder / f"{name}.txt").write_text((phrase * 15) + cohort + name)
+                        (folder / f"{name}.txt").write_text((phrase * 30) + cohort + name)
                         papers.append({"author_id": author, "paper_id": name,
                                        "stratum": "synthetic", "path": f"{name}.txt"})
                 manifest = folder / "manifest.json"
@@ -65,9 +77,9 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaisesRegex(CorpusError, "reuse"):
                 qualify_evaluators(manifests[0], manifests[0])
             gate = qualify_evaluators(*manifests)
-            self.assertIn("function_words", gate["features"])
+            self.assertEqual(set(gate["matrix"]), {"lexical", "ending", "order"})
             cases = []
-            baseline = "The synthetic assay produced artificial observations in this sample. " * 8
+            baseline = "The synthetic assay produced artificial observations in this sample. " * 24
             for content in ("c1", "c2"):
                 for author in "AB":
                     cases.append({"case_id": content + author, "content_id": content,
@@ -81,9 +93,12 @@ class ProtocolTests(unittest.TestCase):
             for case in cases:
                 case["variants"] = {label: baseline for label in CONDITIONS if label != "none"}
             file.write_text(json.dumps({"cases": cases}))
+            template_file = root / "template.json"
+            self.assertEqual(make_semantic_template(file, template_file)["cases"], 4)
+            self.assertNotIn(baseline, template_file.read_text())
             report = evaluate_factorial(*manifests, file)
-            self.assertEqual(report["status"], "semantic_unavailable")
-            self.assertEqual(report["summary"]["all"]["function_words"]["improved"], 0)
+            self.assertEqual(report["status"], "evaluator_ineligible")
+            self.assertEqual(report["summary"]["all"]["lexical"]["improved"], 0)
             self.assertIsNone(report["summary"]["all"]["semantic_pass"])
             self.assertNotIn("artificial observations demonstrate", json.dumps(report))
             class IdenticalEncoder:
@@ -91,6 +106,22 @@ class ProtocolTests(unittest.TestCase):
                     return [[1.0, 0.0] for _ in texts]
             scored = evaluate_factorial(*manifests, file, IdenticalEncoder())
             self.assertEqual(scored["summary"]["all"]["semantic_pass"], 4)
+            imported = {"model": "locally-asserted-sbert-v1", "metric": "cosine", "cases": []}
+            for case in cases:
+                drafts = {"none": case["baseline"], **case["variants"]}
+                imported["cases"].append({"case_id": case["case_id"],
+                    "reference_sha256": hashlib.sha256(case["content_brief"].encode()).hexdigest(),
+                    "scores": {label: {"sha256": hashlib.sha256(body.encode()).hexdigest(),
+                                       "similarity": 0.80 if label == "all" and case["case_id"] == "c1A" else 0.90}
+                               for label, body in drafts.items()}})
+            score_file = root / "scores.json"
+            score_file.write_text(json.dumps(imported))
+            injected = evaluate_factorial(*manifests, file, semantic_scores_path=score_file)
+            self.assertEqual(injected["summary"]["all"]["semantic_pass"], 3)
+            imported["cases"][0]["scores"]["all"]["sha256"] = "0" * 64
+            score_file.write_text(json.dumps(imported))
+            with self.assertRaisesRegex(CorpusError, "hash mismatch"):
+                evaluate_factorial(*manifests, file, semantic_scores_path=score_file)
             cases[0]["variants"]["all_snippet"] = baseline
             cases[0]["snippet_anchor"] = baseline
             cases[1]["variants"]["all_snippet"] = baseline
