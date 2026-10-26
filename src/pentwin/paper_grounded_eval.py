@@ -126,7 +126,7 @@ def evaluate_paper_grounded(manifest_path: Path, cases_path: Path | None = None)
                         "author_id": author, "scores": scores})
     summary = {name: {"improved": sum(row["scores"][name]["improved"] for row in results),
                       "of": len(results)} for name in FEATURES}
-    report.update({"status": "exploratory_proxy" if all(ready.values()) else "calibration_inadequate",
+    report.update({"status": "single_cohort_proxy_unqualified" if all(ready.values()) else "calibration_inadequate",
                    "generated": {"cases": len(results), "summary": summary, "cases_detail": results,
                                  "interpretation": "Descriptive distances only; no author-likeness conclusion."}})
     return report
