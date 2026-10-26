@@ -3,6 +3,7 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pentwin.ablation_protocol import CONDITIONS, snippet_from_target, conditions
 from pentwin.cli import CorpusError
@@ -20,6 +21,37 @@ class FixedEncoder:
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_four_of_six_is_an_axis_specific_exploration_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifests = []
+            for cohort in ("one", "two"):
+                folder = root / cohort
+                folder.mkdir()
+                (folder / "paper.txt").write_text(cohort)
+                manifest = folder / "manifest.json"
+                manifest.write_text(json.dumps({"papers": [{"path": "paper.txt"}]}))
+                manifests.append(manifest)
+            def counts(a, b, available=3):
+                return {"A": {"correct": a, "available": available},
+                        "B": {"correct": b, "available": available}}
+            def report(lexical, ending, order):
+                return {"per_author": {"lexical": counts(*lexical),
+                                       "ending": counts(*ending),
+                                       "order": counts(*order, available=0)},
+                        "confounds": [], "domain_diagnostics": {}}
+            with patch("pentwin.qualified_eval.calibrate", side_effect=[
+                    report((1, 3), (2, 3), (0, 0)),
+                    report((2, 2), (1, 3), (0, 0))]):
+                gate = qualify_evaluators(*manifests)
+            self.assertEqual(gate["threshold"]["per_cohort"], "at least 4/6")
+            self.assertEqual(gate["status"], "partial_exploratory_eligible")
+            self.assertTrue(gate["axes"]["lexical"]["eligible_for_exploratory_scoring"])
+            self.assertTrue(gate["axes"]["ending"]["eligible_for_exploratory_scoring"])
+            self.assertFalse(gate["axes"]["order"]["eligible_for_exploratory_scoring"])
+            self.assertEqual(gate["axes"]["lexical"]["writer_imbalance"], [True, False])
+            self.assertEqual(gate["axes"]["order"]["available"], [0, 0])
+
     def test_axis_matrix_requires_200_measurable_words(self):
         sentence = "However, we suggest the synthetic molecular assay indicates a limited effect here. "
         with self.assertRaisesRegex(CorpusError, "at least 200"):
@@ -97,7 +129,10 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(make_semantic_template(file, template_file)["cases"], 4)
             self.assertNotIn(baseline, template_file.read_text())
             report = evaluate_factorial(*manifests, file)
-            self.assertEqual(report["status"], "evaluator_ineligible")
+            self.assertEqual(report["status"], "semantic_unavailable")
+            self.assertEqual(report["eligible_axes"], ["lexical", "ending"])
+            self.assertEqual(report["excluded_axes"], ["order"])
+            self.assertEqual(report["condition_set"], "full_factorial")
             self.assertEqual(report["summary"]["all"]["lexical"]["improved"], 0)
             self.assertIsNone(report["summary"]["all"]["semantic_pass"])
             self.assertNotIn("artificial observations demonstrate", json.dumps(report))
@@ -106,6 +141,17 @@ class ProtocolTests(unittest.TestCase):
                     return [[1.0, 0.0] for _ in texts]
             scored = evaluate_factorial(*manifests, file, IdenticalEncoder())
             self.assertEqual(scored["summary"]["all"]["semantic_pass"], 4)
+            self.assertEqual(scored["summary"]["all"]["lexical"]["improved_and_semantic_pass"], 0)
+            reduced = json.loads(json.dumps(cases))
+            for case in reduced:
+                case["variants"] = {label: baseline for label in ("lexical", "ending", "lexical_ending")}
+                case["variants"]["lexical_ending_snippet"] = baseline
+                case["snippet_anchor"] = "A separate human-written opening."
+            file.write_text(json.dumps({"cases": reduced}))
+            smaller = evaluate_factorial(*manifests, file, IdenticalEncoder())
+            self.assertEqual(smaller["condition_set"], "eligible_axes_only")
+            self.assertEqual(set(smaller["summary"]), set(reduced[0]["variants"]))
+            file.write_text(json.dumps({"cases": cases}))
             imported = {"model": "locally-asserted-sbert-v1", "metric": "cosine", "cases": []}
             for case in cases:
                 drafts = {"none": case["baseline"], **case["variants"]}
