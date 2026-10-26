@@ -1,6 +1,6 @@
 # PenTwin — reviewed corpus and local MCP pilot
 
-PenTwin is an English life sciences writing-style project. It prepares a manually reviewed corpus and serves limited style observations through a read-only local MCP server. It does not generate prose, call an LLM, publish a manuscript, or certify authorship, meaning, or style fidelity. **The three-paper minimum is an ingestion threshold, not evidence of reliable style imitation.**
+PenTwin is an English life sciences author-style project. It prepares a manually reviewed corpus and serves style observations through a read-only local MCP server. The host LLM writes prose; PenTwin does not generate prose, call an LLM, publish a manuscript, or certify authorship or author likeness. Scientific meaning and citation checks are outside this project and belong to an independent service. **The three-paper minimum is an ingestion threshold, not evidence of reliable style imitation.**
 
 ## Prerequisites
 
@@ -37,11 +37,9 @@ The process reads JSON-RPC from stdin and writes MCP responses to stdout. Config
 
 `style_profile` measures English writing from visually reviewed **development** papers locally, with one vote per independent paper family. It measures sentence and paragraph length, hedging, first person, passive constructions, citation and punctuation use, and a fixed list of generic academic connectors and stance verbs. It returns only bounded aggregate numbers and generic vocabulary from that fixed list. Published or unpublished source text, names, and phrases do not enter this response. `model_excerpt_permission=no` permits this local calculation. No MCP tool serves raw paper examples.
 
-`rewrite_plan(draft, section)` compares the user's draft with those aggregate targets. It returns up to four prioritized edits and a meaning-preservation contract for the host LLM. A requested section or move with fewer than two reviewed paper families returns `insufficient_evidence` rather than broadening the scope. It does **not** train a model or return paper passages. The LLM in ChatGPT or Claude writes the revised text using this plan. `assess_revision(original, revised, section)` then measures whether the diagnostic style distance moved, reports exact text hashes, and flags numeric tokens, negation, uncertainty, and changed citation tokens for human review. The distance is not an author-likeness score and equal token counts cannot prove meaning is preserved. MCP cannot force a model to call either tool or prevent changes after assessment.
+`rewrite_plan(draft, section)` compares a draft with aggregate style targets and returns up to four prioritized edits about rhythm, stance, wording, and argument flow. A requested section or move with fewer than two reviewed paper families returns `insufficient_evidence`. It does not train a model or return paper passages. The host LLM in ChatGPT or Claude writes the revision. `assess_revision(original, revised, section)` then reports text hashes and diagnostic movement toward measured tendencies. A lower distance does not demonstrate author likeness; use blinded human ratings. Scientific claims, citations, and meaning require an independent verifier outside PenTwin. MCP cannot force a model to call the tools or prevent subsequent changes.
 
-Both `rewrite_plan` and `assess_revision` accept an optional `protected_spans` array of exact phrases from the original draft, for example `["12.5 mg/mL", "not superior to", "[12]"]`. The plan asks the host to keep these unchanged; assessment reports a count change for each protected span. Use the same list in both calls. Exact phrase checks can miss changed context, scope, causality, and meaning, so they never approve a draft. The choice follows a [comparison of writing services](docs/SERVICE_RESEARCH.md), without relying on their marketing performance claims.
-
-`corpus_status` reports anonymous counts. Unpublished papers can be ingested and locally measured, but their text is never returned by this server. `review_draft` flags changed numeric tokens between a supplied fact sheet and draft; it cannot detect all altered claims. See [style logic and validation](docs/STYLE_ENGINE.md) and [hypothesis tests](docs/HYPOTHESES.md). Function-word recognition on the first tiny sample did not replicate; generated author likeness is still unvalidated.
+`corpus_status` reports anonymous counts. Unpublished papers can be ingested and locally measured, but their text is never returned. See [style logic and validation](docs/STYLE_ENGINE.md), [hypothesis tests](docs/HYPOTHESES.md), and [service research](docs/SERVICE_RESEARCH.md). Function-word recognition on the first tiny sample did not replicate; generated author likeness remains unvalidated.
 
 **Current evidence:** three small attribution pilots gave mixed results. In a same-column six-paper cohort, seven features and length-only both matched 5/6 withheld articles. None of these pilots supports a claim that generated prose resembles its intended author. Details and limitations are in the [hypothesis record](docs/HYPOTHESES.md).
 
@@ -61,13 +59,13 @@ Do not assume a local corpus means a local-only model: tool responses and fact s
 
 ## Blinded writing quality experiment
 
-Use the same fact sheet to create baseline and PenTwin-guided drafts separately for each model and section. Store a **private** JSON file with `cases` containing `case_id`, `model`, `section`, `baseline`, and `guided` text. Do not put this file or model outputs in Git. Then:
+Use the same content brief to create baseline and PenTwin-guided drafts separately for each model and section. Store a **private** JSON file with `cases` containing `case_id`, anonymous `author_id`, `model`, `section`, `baseline`, and `guided` text. Do not put this file or model outputs in Git. Then:
 
 ```powershell
 python -m pentwin.cli blind C:\private\pentwin\cases.json C:\private\pentwin\blind-001 --seed secret-experiment-seed
 ```
 
-Give `rating.csv` to the author without `private_key.json`. For each row, fill `preferred` with `A`, `B`, or `tie` and rate `likeness_a/b`, `naturalness_a/b`, and `facts_a/b` from 1 to 5. A qualified reviewer marks `material_error_a/b` as `yes`, `no`, or `uncertain`; enter comments. Keep the key separate until ratings are complete. Run `python -m pentwin.cli ratings C:\private\pentwin\blind-001` to see paired preferences and each rating dimension by GPT and Claude. Collect independent content checks and multiple papers/sections; this descriptive count alone does not establish reliable author style. Do not inspect or use holdout text for prompt design, debugging, or tuning. See [evaluation protocol](docs/EVALUATION.md).
+Give `rating.csv` to a reviewer familiar with each writer, without `private_key.json`. For each row, set `preferred` to `A`, `B`, or `tie` for the closer author voice. Rate `likeness_a/b`, `distinctiveness_a/b` (higher means less generic), and `naturalness_a/b` on 1–5 anchored scales. Keep the key separate until ratings are complete. Run `python -m pentwin.cli ratings C:\private\pentwin\blind-001` to see preferences by anonymous author and model, plus paired ratings. Repeat across authors, sections, and GPT/Claude versions. This experiment evaluates author style only; it does not check scientific content. See [evaluation protocol](docs/EVALUATION.md).
 
 ### Labels
 
@@ -84,4 +82,4 @@ Moves: `background`, `gap`, `objective`, `method`, `finding`, `comparison`, `int
 
 ## Evaluation order
 
-After review, build a same-content baseline using ordinary GPT and Claude drafts. Then compare style-guided output in blinded, author-rated trials, with separate fidelity and fluency checks. Do not use the holdout paper for feature selection, prompts, examples, or debugging. See `REVIEW.md` for the adversarial analysis and experimental plan.
+After source review, prepare matched content briefs and generate ordinary and PenTwin-guided drafts with GPT and Claude. Compare blinded author likeness and distinctiveness across multiple writers and sections. Keep holdout papers untouched during prompt and feature development. Treat the prior 5/6 attribution pilot as exploratory; it does not measure the likeness of generated text.
