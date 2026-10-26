@@ -116,13 +116,22 @@ class MCPTests(unittest.TestCase):
                 anchor = json.loads(anchored.content[0].text)["conditions"]["all_snippet"]
                 self.assertEqual(anchor["anchor_words"], min(50, len(target.split()) // 5))
                 self.assertNotIn(target, json.dumps(anchor))
+                lexical = await client.call_tool("generation_protocol", {"section": "introduction",
+                    "target_text": target, "confirmed_author_written": True, "lexical_only": True})
+                self.assertFalse(lexical.is_error)
+                lexical_payload = json.loads(lexical.content[0].text)
+                self.assertEqual(lexical_payload["condition_set"], "lexical_only")
+                self.assertEqual(set(lexical_payload["conditions"]), {"none", "lexical", "lexical_snippet"})
+                self.assertEqual(lexical_payload["conditions"]["lexical_snippet"]["anchor_sha256"],
+                                 anchor["anchor_sha256"])
+                self.assertTrue(all(r["text"] not in json.dumps(lexical_payload) for r in load_corpus(self.run)))
                 from pentwin.ablation_protocol import CONDITIONS
                 manifests = []
                 for cohort in ("c1", "c2"):
                     folder = self.root / cohort
                     folder.mkdir()
                     entries = []
-                    for author in "AB":
+                    for author in ("AB" if cohort == "c1" else "CD"):
                         for index in range(5):
                             name = f"{author}{index}"
                             body = ("We suggest the artificial molecular pattern may be limited. " if author == "A"
