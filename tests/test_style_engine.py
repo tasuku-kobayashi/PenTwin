@@ -38,7 +38,8 @@ class StyleLogicTests(unittest.TestCase):
         self.assertEqual(guidance(self.rows, draft, "discussion")["status"], "insufficient_evidence")
         self.assertEqual(guidance(self.rows, draft, "results", "limitation")["status"], "insufficient_evidence")
         self.assertEqual(guidance(self.rows, draft, "results", "finding")["status"], "rewrite_guidance")
-        self.assertIn("function:the", result["target"])
+        self.assertNotIn("function:the", result["target"])
+        self.assertEqual(result["diagnostic_features_excluded_from_rewrite"], ["function_word_rates"])
 
     def test_revision_style_diagnostic_and_fidelity_alarms_are_separate(self):
         original = "The synthetic response was 12% in the assay. The result demonstrates an effect."
