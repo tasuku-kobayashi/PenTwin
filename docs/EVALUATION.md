@@ -1,0 +1,11 @@
+# Style and meaning evaluation protocol
+
+Status: infrastructure ready; no author-likeness result has been established. An extracted PDF candidate is not a style example until the primary writer and source comparison are confirmed. Retain the holdout family unopened for final evaluation; if it has already been inspected, start a new evaluation split with independent papers.
+
+1. Collect at least three independent papers, confirm primary writing contribution for each, and review every candidate against the original. Prefer editable source files where possible. Record section, rhetorical move, publication status, and model excerpt permission. Count accepted passages and families by section; do not infer a section style from one paper.
+2. Prepare fact sheets that specify exact findings, denominators, controls, units, uncertainty, source citations, and claims that must remain tentative. Draft the same content with ordinary GPT/Claude and a PenTwin-guided condition. Record model name/version, date, settings, prompts, corpus hash, selected examples, and tool invocations. Do not reuse a paper family or a version of its text across development and holdout.
+3. Blind and randomize the two drafts with `pentwin blind`. The author rates preference and likeness independently. A separate life sciences reviewer checks meaning and citations; rate naturalness separately. Keep the mapping hidden until ratings are complete. Repeat across papers and sections, and report results separately by model.
+4. Inject known changes in numbers, units, direction, negation, comparison group, population, causality, uncertainty, and citations into synthetic drafts. `review_draft` only detects some numeric tokens and always returns `needs_human_review`. Tally detected, uncertain, and missed cases; any missed material change blocks an automatic approval claim.
+5. Compare baseline and guided preferences, factual changes, naturalness, and rejected outputs. Treat aggregate wording metrics as diagnostic only. Do not call the output author-faithful until blinded author ratings improve consistently without material factual regressions on untouched evaluation cases. A small pilot and a single holdout paper carry wide uncertainty.
+
+This procedure never delegates the final factual, authorship, privacy, or journal-policy decision to an MCP tool.

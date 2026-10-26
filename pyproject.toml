@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pentwin"
-version = "0.1.0"
-description = "Local corpus preparation for PenTwin's pre-generation evaluation stage"
+version = "0.2.0"
+description = "Private corpus preparation and read-only local MCP style tools"
 requires-python = ">=3.11"
-dependencies = ["pdfplumber>=0.11,<1", "python-docx>=1.1,<2"]
+dependencies = ["pdfplumber>=0.11,<1", "python-docx>=1.1,<2", "mcp>=2.3,<3"]
 
 [project.optional-dependencies]
 test = ["reportlab>=4,<5"]
