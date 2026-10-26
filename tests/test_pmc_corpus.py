@@ -44,6 +44,20 @@ class PMCCorpusTests(unittest.TestCase):
             self.assertNotIn("artificial biological", json.dumps(result))
             self.assertNotIn("99", (out / "A0.txt").read_text())
             self.assertEqual(len(calibrate(out / "manifest.json")["cases"]), 6)
+            expanded = list(papers)
+            for author in "AB":
+                for i in (3, 4):
+                    prior = next(p for p in papers if p["author_id"] == author)
+                    pmcid = f"PMC1000{int(author == 'B')}{i}00"
+                    source = (root / prior["xml"]).read_text()
+                    (root / f"{author}{i}.xml").write_text(
+                        source.replace(prior["pmcid"], pmcid).replace("Trial number 0", f"Trial number {i}"))
+                    expanded.append({**prior, "paper_id": f"{author}{i}", "pmcid": pmcid,
+                                     "xml": f"{author}{i}.xml"})
+            spec.write_text(json.dumps({"papers": expanded}))
+            ten = root / "ten"
+            self.assertEqual(build_manifest(spec, ten)["papers"], 10)
+            self.assertEqual(len(calibrate(ten / "manifest.json")["cases"]), 10)
             papers[0]["primary_drafter_verified"] = False
             spec.write_text(json.dumps({"papers": papers}))
             with self.assertRaisesRegex(CorpusError, "verified original drafting"):
