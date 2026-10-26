@@ -37,7 +37,7 @@ The process reads JSON-RPC from stdin and writes MCP responses to stdout. Config
 
 `style_profile` measures English writing from visually reviewed **development** papers locally, with one vote per independent paper family. It measures sentence and paragraph length, hedging, first person, passive constructions, citation and punctuation use, and a fixed list of generic academic connectors and stance verbs. It returns only bounded aggregate numbers and generic vocabulary from that fixed list. Published or unpublished source text, names, and phrases do not enter this response. `model_excerpt_permission=no` permits this local calculation. No MCP tool serves raw paper examples.
 
-`rewrite_plan(draft, section)` compares a draft with aggregate style targets and returns up to four prioritized edits about rhythm, stance, wording, and argument flow. A requested section or move with fewer than two reviewed paper families returns `insufficient_evidence`. It does not train a model or return paper passages. The host LLM in ChatGPT or Claude writes the revision. `assess_revision(original, revised, section)` then reports text hashes and diagnostic movement toward measured tendencies. A lower distance does not demonstrate author likeness; use blinded human ratings. Scientific claims, citations, and meaning require an independent verifier outside PenTwin. MCP cannot force a model to call the tools or prevent subsequent changes.
+`rewrite_plan(draft, section)` compares a draft with aggregate style targets and returns up to four prioritized edits about rhythm, stance, wording, and argument flow. A requested section or move with fewer than two reviewed paper families returns `insufficient_evidence`. It does not train a model or return paper passages. The host LLM in ChatGPT or Claude writes the revision. `assess_revision(original, revised, section)` then reports text hashes, a whole-paper style distance and a short-passage diagnostic that omits paragraph length. A lower distance does not demonstrate recognizable author likeness; evaluate with the automated same-content proxy and report its limits. Scientific claims, citations, and meaning require an independent verifier outside PenTwin. MCP cannot force a model to call the tools or prevent subsequent changes.
 
 `corpus_status` reports anonymous counts. Unpublished papers can be ingested and locally measured, but their text is never returned. See [style logic and validation](docs/STYLE_ENGINE.md), [hypothesis tests](docs/HYPOTHESES.md), and [service research](docs/SERVICE_RESEARCH.md). Function-word recognition on the first tiny sample did not replicate; generated author likeness remains unvalidated.
 
@@ -57,15 +57,17 @@ The MCP path was exercised with the official Python SDK client over a real stdio
 
 Do not assume a local corpus means a local-only model: tool responses and fact sheets supplied in the conversation can reach the model provider. Obtain permission for every model-facing passage, and do not publish private run paths or files.
 
-## Blinded writing quality experiment
+## Automated style proxy experiment
 
-Use the same content brief to create baseline and PenTwin-guided drafts separately for each model and section. Store a **private** JSON file with `cases` containing `case_id`, anonymous `author_id`, `model`, `section`, `baseline`, and `guided` text. Do not put this file or model outputs in Git. Then:
+Human blinded ratings are not required in the current validation path. Run the private `auto-eval` command with an anonymous six-paper manifest (two writers, three papers each) and a private JSON containing at least two content briefs, each with the same baseline and a guided draft for both writers. Each case requires `case_id`, `content_id`, anonymous `author_id`, `model`, `section="discussion"`, `baseline`, and `guided`. The reference profile uses the first two manifest papers per writer; the third is reserved for the whole-paper diagnostic. Order the manifest intentionally and do not reuse a version of the same paper as a separate family.
 
 ```powershell
-python -m pentwin.cli blind C:\private\pentwin\cases.json C:\private\pentwin\blind-001 --seed secret-experiment-seed
+python -m pentwin.cli auto-eval C:\private\pentwin\six-papers.json C:\private\pentwin\generated-cases.json
 ```
 
-Give `rating.csv` to a reviewer familiar with each writer, without `private_key.json`. For each row, set `preferred` to `A`, `B`, or `tie` for the closer author voice. Rate `likeness_a/b`, `distinctiveness_a/b` (higher means less generic), and `naturalness_a/b` on 1–5 anchored scales. Keep the key separate until ratings are complete. Run `python -m pentwin.cli ratings C:\private\pentwin\blind-001` to see preferences by anonymous author and model, plus paired ratings. Repeat across authors, sections, and GPT/Claude versions. This experiment evaluates author style only; it does not check scientific content. See [evaluation protocol](docs/EVALUATION.md).
+The command checks source independence and paired content, then reports whether guided prose moves closer to the target than the rival profile. It includes raw length and seven-feature scores, a sentence-only comparator, and a short-passage score that omits paragraph length. No text or source paths are returned. This is an **automated proxy**, not a recognition test by a reader. It reuses features from the rewrite guidance and may be gamed by rhythm alone. Preserve case texts privately and report each writer separately. The [automated pilot report](docs/GENERATED_STYLE_VALIDATION.md) records both successes and failures.
+
+The older `blind` and `ratings` commands remain available for legacy experiments; they are not part of this validation path.
 
 ### Labels
 
@@ -82,4 +84,4 @@ Moves: `background`, `gap`, `objective`, `method`, `finding`, `comparison`, `int
 
 ## Evaluation order
 
-After source review, prepare matched content briefs and generate ordinary and PenTwin-guided drafts with GPT and Claude. Compare blinded author likeness and distinctiveness across multiple writers and sections. Keep holdout papers untouched during prompt and feature development. Treat the prior 5/6 attribution pilot as exploratory; it does not measure the likeness of generated text.
+After source review, prepare matched content briefs and generate ordinary and PenTwin-guided drafts. Use the automated proxy across multiple writers and sections, while preserving the distinction between metric movement and recognizable author voice. Keep holdout papers untouched during prompt and feature development. Treat the prior 5/6 attribution pilot as exploratory; it does not measure the likeness of generated text.

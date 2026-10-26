@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pentwin"
-version = "0.6.0"
+version = "0.7.0"
 description = "Private corpus preparation and local MCP author-style guidance"
 requires-python = ">=3.11"
 dependencies = ["pdfplumber>=0.11,<1", "python-docx>=1.1,<2", "mcp>=2.3,<3"]

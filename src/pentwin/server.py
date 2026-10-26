@@ -39,7 +39,7 @@ def load_corpus(run: Path) -> list[dict]:
 def build_server(run: Path) -> MCPServer:
     # Fail before advertising tools if a run is missing or not sealed.
     load_corpus(run)
-    server = MCPServer("PenTwin", version="0.6.0", instructions="For authorial style, call rewrite_plan and then assess_revision on the exact proposed draft. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
+    server = MCPServer("PenTwin", version="0.7.0", instructions="For authorial style, call rewrite_plan and then assess_revision on the exact proposed draft. Diagnostic distance is not proof of author likeness. Scientific meaning and citations require an independent verifier outside PenTwin.")
 
     @server.tool()
     def corpus_status() -> dict:

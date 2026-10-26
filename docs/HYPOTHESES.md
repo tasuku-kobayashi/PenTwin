@@ -1,6 +1,6 @@
 # Author-style hypotheses and decision record (2026-10-26)
 
-**Scope update (2026-10-26):** PenTwin now evaluates authorial style only. Earlier scientific-fidelity gates, protected spans and material-error criteria below document the previous design; they are superseded. Current evaluation uses blinded author likeness, distinctiveness and naturalness, with scientific verification delegated to a separate service. See [current evaluation](EVALUATION.md).
+**Scope update (2026-10-26):** PenTwin now evaluates authorial style only. Earlier scientific-fidelity gates, protected spans and material-error criteria below document the previous design; they are superseded. Current evaluation uses an automated, same-content style proxy without human ratings; scientific verification belongs to a separate service. See [current evaluation](EVALUATION.md).
 
 The product objective is a more author-like **generated English life-sciences passage** with unchanged scientific meaning. Identifying the author of an existing article is a useful intermediate check, not the objective itself. The six-article exploratory corpus has already influenced design decisions and must not be used for an independent release claim. No participant identity, source passage, or private corpus belongs in this repository.
 
