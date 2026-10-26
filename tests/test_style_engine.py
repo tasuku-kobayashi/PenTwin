@@ -34,7 +34,7 @@ class StyleLogicTests(unittest.TestCase):
         draft = "The synthetic response was 12% in the assay. The result demonstrates an effect."
         result = guidance(self.rows, draft, "results")
         self.assertEqual(result["status"], "rewrite_guidance")
-        self.assertIn("use calibrated uncertainty only where the evidence supports it", result["prioritized_edits"])
+        self.assertIn("use more hedging expressions in the author's typical phrasing", result["prioritized_edits"])
         self.assertNotIn("PRIVATE", json.dumps(result))
         self.assertEqual(guidance(self.rows, draft, "discussion")["status"], "insufficient_evidence")
         self.assertEqual(guidance(self.rows, draft, "results", "limitation")["status"], "insufficient_evidence")
@@ -42,32 +42,15 @@ class StyleLogicTests(unittest.TestCase):
         self.assertNotIn("function:the", result["target"])
         self.assertEqual(result["diagnostic_features_excluded_from_rewrite"], ["function_word_rates"])
 
-    def test_revision_style_diagnostic_and_fidelity_alarms_are_separate(self):
+    def test_revision_style_diagnostic_does_not_claim_author_likeness(self):
         original = "The synthetic response was 12% in the assay. The result demonstrates an effect."
         revision = "We observed a synthetic response of 12% in the assay. We suggest that this result may reflect an effect."
         result = assess(self.rows, original, revision, "results")
         self.assertLess(result["style_distance_diagnostic"]["after"], result["style_distance_diagnostic"]["before"])
-        self.assertEqual(result["status"], "needs_human_review")
-        self.assertIn("uncertainty", result["count_changes"])
-        altered = assess(self.rows, original, revision.replace("12%", "21%"), "results")
-        self.assertIn("21%", altered["lexical_alarms"]["new_numeric_tokens"])
-        changed_citation = assess(self.rows, original + " [12]", revision + " [13]", "results")
-        self.assertEqual(changed_citation["citation_token_changes"], {"added": ["[13]"], "removed": ["[12]"]})
-
-    def test_protected_spans_preserve_symbols_and_report_exact_changes(self):
-        original = "The assay showed 12.5 mg/mL in group A [12]. It was not superior to group B."
-        spans = ["12.5 mg/mL", "group A", "[12]", "not superior to"]
-        plan = guidance(self.rows, original, "results", protected_spans=spans)
-        self.assertEqual(plan["protected_spans"], spans)
-        revised = "We observed 12.5 mg/mL in group A [12]. It was superior to group B."
-        checked = assess(self.rows, original, revised, "results", protected_spans=spans)
-        self.assertEqual(checked["protected_span_changes"],
-                         [{"span": "not superior to", "original_count": 1, "revision_count": 0}])
-        self.assertEqual(checked["status"], "needs_human_review")
-        self.assertEqual(assess(self.rows, original, original, "results", protected_spans=spans)
-                         ["protected_span_changes"], [])
-        with self.assertRaisesRegex(CorpusError, "must occur"):
-            guidance(self.rows, original, "results", protected_spans=["missing term"])
+        self.assertEqual(result["status"], "style_diagnostic_only")
+        self.assertNotIn("lexical_alarms", result)
+        self.assertNotIn("protected_spans", guidance(self.rows, original, "results"))
+        self.assertIn("independent verifier", guidance(self.rows, original, "results")["scope"])
 
 
 if __name__ == "__main__":
