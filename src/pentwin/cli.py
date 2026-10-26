@@ -329,6 +329,9 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("output", type=Path)
     diagnostic = sub.add_parser("diagnose", help="Private two-author whole-paper style diagnostic")
     diagnostic.add_argument("manifest", type=Path)
+    automatic = sub.add_parser("auto-eval", help="Private same-content generated style proxy; no human ratings")
+    automatic.add_argument("manifest", type=Path)
+    automatic.add_argument("cases", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "serve":
@@ -341,6 +344,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "diagnose":
             from pentwin.validation import diagnose
             result = diagnose(args.manifest)
+        elif args.command == "auto-eval":
+            from pentwin.automatic_eval import evaluate_generations
+            result = evaluate_generations(args.manifest, args.cases)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
