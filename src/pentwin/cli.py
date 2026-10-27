@@ -6,10 +6,12 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -256,6 +258,116 @@ def prepare(manifest: Path, out: Path, seed: str) -> dict:
             "holdout_families": sum(v == "holdout" for v in splits.values())}
 
 
+def onboard(source_dir: Path, out: Path, seed: str, status: str,
+            primary_confirmed: bool, independent_confirmed: bool) -> dict:
+    """Build a private manifest from local files, then run the usual preparation."""
+    if not primary_confirmed or not independent_confirmed:
+        raise CorpusError("Confirm primary writing and independent study families explicitly; otherwise edit a manifest and use prepare")
+    if status not in {"published", "unpublished"}:
+        raise CorpusError("Choose published or unpublished status for every source in this batch")
+    if not source_dir.is_dir():
+        raise CorpusError("Source directory does not exist")
+    sources = sorted(p for p in source_dir.iterdir() if p.is_file() and p.suffix.lower() in {".pdf", ".docx", ".tex"})
+    if len(sources) < 3:
+        raise CorpusError("Choose a directory with at least three supported paper files")
+    if any((parent / ".git").exists() for source in sources for parent in (source.parent, *source.parents)):
+        raise CorpusError("Keep private source papers outside every Git working tree")
+    if any((parent / ".git").exists() for parent in (out.resolve(), *out.resolve().parents)):
+        raise CorpusError("Private corpus output must be outside every Git working tree")
+    if out.exists() and any(out.iterdir()):
+        raise CorpusError("Output directory must be empty; keep prior reviews and runs immutable")
+    digests = [sha256(p) for p in sources]
+    if len(set(digests)) != len(digests):
+        raise CorpusError("Identical files found; remove duplicate versions and review family assignments")
+    papers = [{"paper_id": f"paper-{i:03d}", "family_id": f"study-{i:03d}",
+               "file": str(source.resolve()), "authorship": "primary_confirmed",
+               "status": status, "model_excerpt_permission": "no"}
+              for i, source in enumerate(sources, 1)]
+    # The temporary manifest lives beside the run; source paths remain absolute
+    # when the final manifest is moved inside the prepared run.
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json",
+                                     prefix=".pentwin-manifest-", dir=out.parent, delete=False) as fh:
+        manifest = Path(fh.name)
+        json.dump({"papers": papers}, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    try:
+        result = prepare(manifest, out, seed)
+        (out / "onboarding-manifest.json").write_bytes(manifest.read_bytes())
+    finally:
+        manifest.unlink(missing_ok=True)
+    return result | {"manifest": str(out / "onboarding-manifest.json"), "review": str(out / "review.csv")}
+
+
+def review(out: Path, input_fn=input, output_fn=print) -> dict:
+    """Resume a local, explicit per-candidate review without editing CSV by hand."""
+    if (out / "corpus.jsonl").exists():
+        raise CorpusError("Sealed run cannot be reviewed again; start a new run")
+    lock = json.loads((out / "manifest.lock.json").read_text(encoding="utf-8"))
+    candidates = json.loads((out / "candidates.lock.json").read_text(encoding="utf-8"))
+    papers = {p["paper_id"]: p for p in lock["papers"]}
+    path = out / "review.csv"
+    with path.open(encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        if reader.fieldnames != FIELDS:
+            raise CorpusError("review.csv columns were changed")
+        rows = list(reader)
+    if len(rows) != len(candidates) or {r["candidate_id"] for r in rows} != set(candidates):
+        raise CorpusError("Review candidates changed; rerun prepare")
+
+    def save():
+        # Atomic replacement preserves progress after each answer.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="",
+                                         dir=out, prefix=".review-", delete=False) as fh:
+            tmp = Path(fh.name)
+            writer = csv.DictWriter(fh, fieldnames=FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(tmp, path)
+
+    completed = 0
+    for row in rows:
+        if row["include"] in {"yes", "no"}:
+            completed += 1
+            continue
+        paper = papers[row["paper_id"]]
+        output_fn(f"\n{completed + 1}/{len(rows)} | {row['paper_id']} | {row['source_location']} | suggested {row['section_suggested']}")
+        output_fn(f"Source: {paper['source_path']}")
+        output_fn(f"Warning: {row['extraction_warning']}")
+        output_fn(row["text"][:1000] + (" …" if len(row["text"]) > 1000 else ""))
+        while True:
+            answer = input_fn("Include? [y]es / [n]o / [q]uit: ").strip().lower()
+            if answer in {"y", "n", "q"}:
+                break
+        if answer == "q":
+            break
+        if answer == "n":
+            row["include"] = "no"
+        else:
+            if paper["authorship"] != "primary_confirmed":
+                raise CorpusError("Cannot accept a source without confirmed primary writing")
+            if input_fn("After visually comparing the original source, type verified: ").strip() != "verified":
+                output_fn("Not marked as reviewed; resume later.")
+                break
+            while True:
+                section = input_fn(f"Section {sorted(SECTIONS)} [{row['section_suggested']}]: ").strip().lower() or row["section_suggested"]
+                if section in SECTIONS:
+                    break
+            while True:
+                move = input_fn(f"Rhetorical move {sorted(MOVES)}: ").strip().lower()
+                if move in MOVES:
+                    break
+            note = ""
+            if section == "other":
+                while not note:
+                    note = input_fn("Reason for other section: ").strip()
+            row.update(include="yes", source_verified="yes", section=section, move=move, review_note=note)
+        save()
+        completed += 1
+    return {"reviewed": completed, "remaining": len(rows) - completed,
+            "ready_to_seal": completed == len(rows), "review": str(path)}
+
+
 def seal(out: Path) -> dict:
     lock = json.loads((out / "manifest.lock.json").read_text(encoding="utf-8"))
     candidates = json.loads((out / "candidates.lock.json").read_text(encoding="utf-8"))
@@ -323,6 +435,15 @@ def main(argv: list[str] | None = None) -> int:
     prep.add_argument("manifest", type=Path)
     prep.add_argument("output", type=Path)
     prep.add_argument("--seed", default="pentwin-pilot-v1")
+    start = sub.add_parser("onboard", help="Discover local papers and prepare a private review in one step")
+    start.add_argument("source_dir", type=Path)
+    start.add_argument("output", type=Path)
+    start.add_argument("--seed", default="pentwin-pilot-v1")
+    start.add_argument("--status", choices=["published", "unpublished"], required=True)
+    start.add_argument("--confirm-primary-writing", action="store_true")
+    start.add_argument("--confirm-independent-studies", action="store_true")
+    guided = sub.add_parser("review", help="Resume local candidate review without manually editing CSV")
+    guided.add_argument("output", type=Path)
     final = sub.add_parser("seal", help="Seal explicitly reviewed candidates into a split corpus")
     final.add_argument("output", type=Path)
     server = sub.add_parser("serve", help="Run the local read-only MCP server over stdio")
@@ -414,6 +535,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "semantic-template":
             from pentwin.semantic_guard import make_semantic_template
             result = make_semantic_template(args.cases, args.output)
+        elif args.command == "onboard":
+            result = onboard(args.source_dir, args.output, args.seed, args.status,
+                             args.confirm_primary_writing, args.confirm_independent_studies)
+        elif args.command == "review":
+            result = review(args.output)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired,
