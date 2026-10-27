@@ -6,6 +6,18 @@ The MCP `generation_protocol(section)` tool provides a generic baseline and seve
 
 PenTwin is an English life sciences author-style project. It prepares a manually reviewed corpus and serves style observations through a read-only local MCP server. The host LLM writes prose; PenTwin does not generate prose, call an LLM, publish a manuscript, or certify authorship or author likeness. Scientific meaning and citation checks are outside this project and belong to an independent service. **The three-paper minimum is an ingestion threshold, not evidence of reliable style imitation.**
 
+## Faster local onboarding
+
+Place at least three **independent studies** by one confirmed primary writer in a private folder outside Git. The files may be PDF, DOCX or TeX. If every file has the same publication status, the following command discovers the files, assigns anonymous IDs, and extracts review candidates in one step:
+
+```powershell
+pentwin onboard C:\private\pentwin\papers C:\private\pentwin\run-001 --status published --confirm-primary-writing --confirm-independent-studies
+pentwin review C:\private\pentwin\run-001
+pentwin seal C:\private\pentwin\run-001
+```
+
+`review` shows each candidate and its exact source location. Open the original file and visually compare accepted text, then type `verified`, select a section and a rhetorical move. Reject unwanted candidates with `n`; `q` saves progress and the next call resumes. The review is stored only in the private run. No source passage is sent to a model by onboarding or review. After sealing, configure MCP to serve that run; subsequent chats reuse it without importing the papers again. If papers are versions of one study, have mixed publication status, or need different authorship labels, edit a private manifest and use the manual path below. The confirmations assert user knowledge; file names cannot establish writing contribution or independent studies. Existing runs are never overwritten.
+
 ## Prerequisites
 
 - Python 3.11 or newer; install with `python -m pip install -e .` inside this directory. For tests, use `python -m pip install -e '.[test]'`.

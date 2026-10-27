@@ -7,7 +7,7 @@ from pathlib import Path
 
 from docx import Document
 from reportlab.pdfgen import canvas
-from pentwin.cli import CorpusError, _pdf_candidates, prepare, seal
+from pentwin.cli import CorpusError, _pdf_candidates, onboard, prepare, review, seal
 
 
 class StageOneTests(unittest.TestCase):
@@ -61,6 +61,36 @@ class StageOneTests(unittest.TestCase):
         self.assertNotIn("cited paragraph", (self.out / "corpus.jsonl").read_text())
         with self.assertRaises(CorpusError):
             seal(self.out)
+
+    def test_onboard_and_resumable_guided_review(self):
+        # One command discovers sources, and the user still verifies every accepted row.
+        with self.assertRaisesRegex(CorpusError, "Confirm primary writing"):
+            onboard(self.root, self.out, "fixed", "published", False, True)
+        result = onboard(self.root, self.out, "fixed", "published", True, True)
+        self.assertEqual(result["papers"], 3)
+        self.assertEqual(len(json.loads((self.out / "onboarding-manifest.json").read_text())["papers"]), 3)
+        answers = iter(["y", "wrong"])
+        partial = review(self.out, input_fn=lambda _: next(answers), output_fn=lambda _: None)
+        self.assertEqual(partial["remaining"], 3)
+        answers = iter(["y", "verified", "", "background", "q"])
+        partial = review(self.out, input_fn=lambda _: next(answers), output_fn=lambda _: None)
+        self.assertEqual(partial["remaining"], 2)
+        self.assertEqual(self._rows()[0]["source_verified"], "yes")
+        answers = iter(["y", "verified", "", "background", "y", "verified", "", "background"])
+        done = review(self.out, input_fn=lambda _: next(answers), output_fn=lambda _: None)
+        self.assertTrue(done["ready_to_seal"])
+        self.assertEqual(seal(self.out)["accepted"], 3)
+        with self.assertRaisesRegex(CorpusError, "Sealed run"):
+            review(self.out, input_fn=lambda _: "n", output_fn=lambda _: None)
+
+    def test_onboard_rejects_duplicate_files_and_git_sources(self):
+        (self.root / "copy.docx").write_bytes((self.root / "p0.docx").read_bytes())
+        with self.assertRaisesRegex(CorpusError, "Identical files"):
+            onboard(self.root, self.out, "fixed", "published", True, True)
+        (self.root / "copy.docx").unlink()
+        (self.root / ".git").mkdir()
+        with self.assertRaisesRegex(CorpusError, "outside every Git"):
+            onboard(self.root, self.out, "fixed", "published", True, True)
 
     def test_review_sheet_reordering_cannot_change_corpus_sequence(self):
         doc = Document(self.root / "p0.docx")
