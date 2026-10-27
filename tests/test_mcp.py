@@ -10,7 +10,7 @@ from pathlib import Path
 from docx import Document
 from mcp import Client, StdioServerParameters
 
-from pentwin.cli import CorpusError, prepare, seal
+from pentwin.cli import CorpusError, check_mcp, prepare, seal
 from pentwin.server import build_server, load_corpus
 from pentwin.style_engine import aggregate
 
@@ -69,6 +69,13 @@ class MCPTests(unittest.TestCase):
             load_corpus(self.run)
         with self.assertRaises(CorpusError):
             build_server(self.root)
+
+    def test_check_mcp_invokes_installed_stdio_tools(self):
+        result = check_mcp(self.run, "introduction")
+        self.assertTrue(result["mcp_connected"])
+        self.assertTrue(result["corpus_status"]["sealed"])
+        self.assertIn("generation_protocol", result["tools"])
+        self.assertIn("lexical", result["generation_conditions"])
 
     def test_stdio_sdk_handshake_discovery_and_tool_call(self):
         async def exercise():
