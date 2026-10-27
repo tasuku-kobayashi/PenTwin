@@ -368,6 +368,42 @@ def review(out: Path, input_fn=input, output_fn=print) -> dict:
             "ready_to_seal": completed == len(rows), "review": str(path)}
 
 
+def check_mcp(out: Path, section: str) -> dict:
+    """Launch the installed stdio server and actually invoke two MCP tools."""
+    import asyncio
+    import os
+    from mcp import Client, StdioServerParameters
+
+    async def run():
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "pentwin.cli", "serve", str(out.resolve())],
+            env=dict(os.environ),
+        )
+        async with Client(params) as client:
+            listing = await client.list_tools()
+            names = sorted(tool.name for tool in listing.tools)
+            if not {"corpus_status", "generation_protocol"} <= set(names):
+                raise CorpusError("Required PenTwin MCP tools were not advertised")
+            status = await client.call_tool("corpus_status", {})
+            plan = await client.call_tool("generation_protocol", {"section": section, "lexical_only": True})
+            if status.is_error or plan.is_error:
+                raise CorpusError("A PenTwin MCP tool returned an error")
+            try:
+                corpus = json.loads(status.content[0].text)
+                protocol = json.loads(plan.content[0].text)
+            except (IndexError, AttributeError, ValueError) as error:
+                raise CorpusError("PenTwin MCP tool returned an invalid response") from error
+            if not corpus.get("sealed") or "conditions" not in protocol:
+                raise CorpusError("PenTwin MCP responses did not confirm the sealed run and protocol")
+            return {"mcp_connected": True, "tools": names,
+                    "corpus_status": corpus,
+                    "generation_conditions": sorted(protocol["conditions"]),
+                    "generation_status": protocol.get("status", "available")}
+
+    return asyncio.run(run())
+
+
 def seal(out: Path) -> dict:
     lock = json.loads((out / "manifest.lock.json").read_text(encoding="utf-8"))
     candidates = json.loads((out / "candidates.lock.json").read_text(encoding="utf-8"))
@@ -444,6 +480,9 @@ def main(argv: list[str] | None = None) -> int:
     start.add_argument("--confirm-independent-studies", action="store_true")
     guided = sub.add_parser("review", help="Resume local candidate review without manually editing CSV")
     guided.add_argument("output", type=Path)
+    check = sub.add_parser("check-mcp", help="Launch local stdio MCP and call two tools on a sealed run")
+    check.add_argument("output", type=Path)
+    check.add_argument("--section", default="discussion", choices=sorted(SECTIONS))
     final = sub.add_parser("seal", help="Seal explicitly reviewed candidates into a split corpus")
     final.add_argument("output", type=Path)
     server = sub.add_parser("serve", help="Run the local read-only MCP server over stdio")
@@ -540,6 +579,8 @@ def main(argv: list[str] | None = None) -> int:
                              args.confirm_primary_writing, args.confirm_independent_studies)
         elif args.command == "review":
             result = review(args.output)
+        elif args.command == "check-mcp":
+            result = check_mcp(args.output, args.section)
         else:
             result = prepare(args.manifest, args.output, args.seed) if args.command == "prepare" else seal(args.output)
     except (CorpusError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired,
