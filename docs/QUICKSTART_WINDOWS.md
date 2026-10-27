@@ -7,6 +7,7 @@ This checks PenTwin on your own Windows PC. The final `check-mcp` command launch
 Install Python 3.11 or newer and Git for Windows. In PowerShell:
 
 ```powershell
+New-Item -ItemType Directory -Force C:\src | Out-Null
 git clone https://github.com/tasuku-kobayashi/PenTwin.git C:\src\PenTwin
 cd C:\src\PenTwin
 py -3.11 -m venv .venv
@@ -17,7 +18,13 @@ If `py -3.11` is unavailable but another Python 3.11+ is installed, create the e
 
 ## 2. Place your papers privately
 
-Create `C:\PenTwin-private\papers` outside the cloned repository. Put at least three **independent studies** by the same confirmed primary writer directly in that folder; no subfolders. Accepted extensions are `.pdf`, `.docx`, and `.tex`. Duplicate bytes are rejected, but the computer cannot tell whether different files describe the same study. For this short path, all files must have the same `published` or `unpublished` status.
+Create `C:\PenTwin-private\papers` outside the cloned repository:
+
+```powershell
+New-Item -ItemType Directory -Force C:\PenTwin-private\papers | Out-Null
+```
+
+Put at least three **independent studies** by the same confirmed primary writer directly in that folder; no subfolders. Accepted extensions are `.pdf`, `.docx`, and `.tex`. Duplicate bytes are rejected, but the computer cannot tell whether different files describe the same study. For this short path, all files must have the same `published` or `unpublished` status.
 
 Do not put any real paper, extracted text, manifest or run output in the public Git repository. A scanned PDF without selectable text may fail extraction.
 
